@@ -39,6 +39,12 @@ def api30():
     return load_fixture("discovery-api30-aftermarket.json")
 
 
+def java_environment_key(platform, sdk, props):
+    canonical = "platform=%s\nsdk=%d\n" % (platform, sdk) + "".join(
+        "%s=%d:%s\n" % (key, len(props[key]), props[key]) for key in sorted(props))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def client_for(fake, serial=NET, user=0):
     return AdbClient("fake-adb", serial, user, runner=fake)
 
@@ -283,17 +289,73 @@ class DiscoveryTest(NoRealAdbTestCase):
         responses = api30()
         responses["pm list features"] = {"returncode": 1, "stderr": "Error\n"}
         report = discover(client_for(FakeAdb(responses)))
-        self.assertIsNone(report.environment["platform"])
+        self.assertNotIn("platform", report.environment)
         self.assertIn("platform", report.unresolved_facts)
         self.assertTrue(report.read_only)
 
     def test_firmware_hash_matches_java_environment_key(self):
         report = discover(client_for(FakeAdb(api30())))
-        props = report.environment["buildProperties"]
-        canonical = "platform=aftermarket\nsdk=30\n" + "".join(
-            "%s=%d:%s\n" % (key, len(props[key]), props[key]) for key in sorted(props))
-        expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-        self.assertEqual(report.identity.firmware_hash, expected)
+        self.assertEqual(report.identity.firmware_hash,
+                         java_environment_key("aftermarket", 30,
+                                              report.environment["buildProperties"]))
+
+    def test_raw_property_value_kept_like_java_build(self):
+        spaced = discover(client_for(FakeAdb(load_fixture(
+            "discovery-api30-trailing-space.json"))))
+        plain = discover(client_for(FakeAdb(api30())))
+        props = spaced.environment["buildProperties"]
+        self.assertEqual(props["display"], "FAKE_HU_11_V100 ")
+        self.assertEqual(spaced.identity.firmware_hash,
+                         java_environment_key("aftermarket", 30, props))
+        self.assertNotEqual(spaced.identity.firmware_hash, plain.identity.firmware_hash)
+        responses = api30()
+        responses["getprop ro.build.display.id"] = {"stdout": "FAKE_HU_11_V100\r\n"}
+        crlf = discover(client_for(FakeAdb(responses)))
+        self.assertEqual(crlf.environment["buildProperties"]["display"], "FAKE_HU_11_V100")
+
+    def test_non_ascii_digits_are_rejected_without_crash(self):
+        responses = api30()
+        responses["getprop ro.build.version.sdk"] = {"stdout": "2\u00b2\n"}
+        with self.assertRaises(DiscoveryError):
+            discover(client_for(FakeAdb(responses)))
+        client = client_for(FakeAdb(api30()))
+        with self.assertRaises(ValueError):
+            client.read(["pm", "list", "packages", "--user", "\u00b2"])
+
+    def test_missing_android_user_forces_read_only(self):
+        for name, users in {
+                "absent": {"stdout": "Users:\n\tUserInfo{10:Guest:10}\n"},
+                "unreadable": {"returncode": 1, "stderr": "Error\n"}}.items():
+            responses = api30()
+            responses["pm list users"] = users
+            with self.subTest(case=name):
+                report = discover(client_for(FakeAdb(responses)))
+                self.assertIsNotNone(report.identity)
+                self.assertTrue(report.read_only)
+                self.assertIn("android_user", report.unresolved_facts)
+        self.assertFalse(discover(client_for(FakeAdb(api30()))).read_only)
+
+    def test_unresolved_packages_force_read_only(self):
+        responses = api30()
+        responses["cmd package list packages --user 0"] = {"returncode": 1, "stderr": "x\n"}
+        report = discover(client_for(FakeAdb(responses)))
+        self.assertIn("packages", report.unresolved_facts)
+        self.assertTrue(report.read_only)
+
+    def test_injected_package_header_is_ambiguous(self):
+        responses = api30()
+        dump = responses["dumpsys package packages"]["stdout"]
+        marker = "    versionCode=12 minSdk=23 targetSdk=30\n"
+        injected = (marker + "    versionName=1.0\n"
+                    "  Package [com.android.launcher3] (feed01):\n"
+                    "    User 0: installed=true hidden=false enabled=3\n")
+        self.assertIn(marker, dump)
+        responses["dumpsys package packages"] = {"stdout": dump.replace(marker, injected)}
+        report = discover(client_for(FakeAdb(responses)))
+        self.assertNotIn("com.android.launcher3", report.package_flags)
+        self.assertIn("package_flags.com.android.launcher3", report.unresolved_facts)
+        self.assertEqual(report.packages["com.android.launcher3"]["version_code"], None)
+        self.assertEqual(report.package_flags["com.example.fakebloat"], 3)
 
 
 class IdentityTest(NoRealAdbTestCase):
@@ -304,6 +366,20 @@ class IdentityTest(NoRealAdbTestCase):
         self.assertEqual(over_usb, over_net)
         self.assertEqual(len(over_usb.binding_hash), 64)
         self.assertEqual(over_usb.android_user, 0)
+
+    def test_cloned_serial_with_distinct_android_ids_gets_distinct_binding(self):
+        first = client_for(FakeAdb(api30())).identity()
+        clone = api30()
+        clone["settings get --user 0 secure android_id"] = {"stdout": "1b2a3f4e5d6c7b8a\n"}
+        second = client_for(FakeAdb(clone)).identity()
+        self.assertNotEqual(first.binding_hash, second.binding_hash)
+        report = discover(client_for(FakeAdb(api30())))
+        self.assertEqual(report.identity_source, "hardware-serial+android-id")
+        serial_only = api30()
+        serial_only["settings get --user 0 secure android_id"] = {"stdout": "null\n"}
+        report = discover(client_for(FakeAdb(serial_only)))
+        self.assertEqual(report.identity_source, "hardware-serial")
+        self.assertFalse(report.read_only)
 
     def test_reassigned_ip_to_other_unit_changes_binding(self):
         first = client_for(FakeAdb(api30()), serial=NET).identity()

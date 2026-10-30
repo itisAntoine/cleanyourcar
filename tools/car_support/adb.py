@@ -110,7 +110,7 @@ def is_read_only(argv):
     argv = list(argv)
     if len(argv) == 2 and argv[0] == "getprop":
         return argv[1] in READABLE_PROPERTIES
-    if argv == ["cmd", "-l"] or argv == ["pm"] or argv == ["pm", "list", "features"]:
+    if argv in (["cmd", "-l"], ["pm"], ["pm", "list", "features"], ["pm", "list", "users"]):
         return True
     if argv in (["dumpsys", "package", "packages"], ["dumpsys", "package", "preferred-xml"]):
         return True
@@ -131,7 +131,11 @@ def is_read_only(argv):
 
 
 def _is_user(text):
-    return text.isdigit() and str(int(text)) == text
+    return _decimal(text) and str(int(text)) == text
+
+
+def _decimal(text):
+    return re.fullmatch(r"[0-9]+", text) is not None
 
 
 class AdbClient:
@@ -170,12 +174,15 @@ class AdbClient:
 
 
 def read_property(client, name):
-    """Trimmed property value, or None when unreadable, blank, or 'unknown'."""
+    """Raw property value as android.os.Build stores it (only getprop's line ending removed),
+    or None when unreadable, blank, or 'unknown'. Trimming is used only for that check,
+    matching EnvironmentFacts."""
     result = client.read(["getprop", name])
     if result.returncode != 0:
         return None
-    value = result.stdout.strip()
-    if not value or value.lower() == "unknown":
+    value = re.sub(r"\r?\n\Z", "", result.stdout)
+    trimmed = value.strip()
+    if not trimmed or trimmed.lower() == "unknown":
         return None
     return value
 
@@ -183,9 +190,9 @@ def read_property(client, name):
 def read_sdk(client):
     """Integer API level from ro.build.version.sdk; release text is never consulted."""
     value = read_property(client, SDK_PROPERTY)
-    if value is None or not value.isdigit() or int(value) < 1:
+    if value is None or not _decimal(value.strip()) or int(value.strip()) < 1:
         return None
-    return int(value)
+    return int(value.strip())
 
 
 def read_platform(client):
@@ -203,11 +210,13 @@ def read_environment(client):
         value = read_property(client, prop)
         if value is not None:
             props[key] = value
-    return {
-        "platform": read_platform(client),
-        "sdk": read_sdk(client),
-        "buildProperties": dict(sorted(props.items())),
-    }
+    environment = {}
+    platform = read_platform(client)
+    if platform is not None:
+        environment["platform"] = platform
+    environment["sdk"] = read_sdk(client)
+    environment["buildProperties"] = dict(sorted(props.items()))
+    return environment
 
 
 def environment_key(environment):
@@ -220,20 +229,28 @@ def environment_key(environment):
 
 
 def read_binding_source(client):
-    """(source, raw value) for the most stable readable identifier, or None.
+    """Ordered (kind, raw value) pairs for every reliable identifier, or None.
 
-    The raw value is returned only to be hashed; callers must not log or store it.
+    A hardware serial may be cloned across a production batch, so a reliable user-scoped
+    Android ID is combined with it rather than ignored. Raw values are returned only to be
+    hashed; callers must not log or store them.
     """
+    sources = []
     for prop in HARDWARE_SERIAL_PROPERTIES:
         value = read_property(client, prop)
         if value is not None and _reliable_serial(value):
-            return ("hardware-serial", value)
+            sources.append(("hardware-serial", value))
+            break
     result = client.read(["settings", "get", "--user", str(client.android_user), "secure",
                           "android_id"])
     value = result.stdout.strip().lower() if result.returncode == 0 else ""
     if _reliable_android_id(value):
-        return ("android-id", value)
-    return None
+        sources.append(("android-id", value))
+    return tuple(sources) or None
+
+
+def source_name(sources):
+    return "+".join(kind for kind, _ in sources)
 
 
 def identity_from_facts(environment, source, android_user):
@@ -241,14 +258,15 @@ def identity_from_facts(environment, source, android_user):
         raise IdentityUnavailable("platform or SDK facts are unavailable")
     if source is None:
         raise IdentityUnavailable("no reliable hardware serial or Android ID is readable")
-    kind, raw = source
+    kinds = [kind for kind, _ in source]
     props = environment["buildProperties"]
     stable = {key: props[key] for key in ("manufacturer", "board", "product") if key in props}
-    if kind == "android-id" and not stable:
+    if kinds == ["android-id"] and not stable:
         raise IdentityUnavailable("Android ID needs manufacturer/board/product facts")
-    parts = ["cleanyourcar-target-binding-v1", "source=" + kind,
-             "value=%d:%s" % (len(raw), raw), "platform=" + environment["platform"]]
-    if kind == "android-id":
+    parts = ["cleanyourcar-target-binding-v2", "source=" + source_name(source)]
+    parts.extend("%s=%d:%s" % (kind, len(raw), raw) for kind, raw in source)
+    parts.append("platform=" + environment["platform"])
+    if "android-id" in kinds:
         parts.append("user=%d" % android_user)
     parts.extend("%s=%d:%s" % (key, len(value), value) for key, value in sorted(stable.items()))
     binding = hashlib.sha256(("\n".join(parts) + "\n").encode("utf-8")).hexdigest()
@@ -272,6 +290,6 @@ def optional_identity(client, environment):
     """(TargetIdentity, source name) or (None, None) when the target must stay read-only."""
     source = read_binding_source(client)
     try:
-        return identity_from_facts(environment, source, client.android_user), source[0]
+        return identity_from_facts(environment, source, client.android_user), source_name(source)
     except IdentityUnavailable:
         return None, None

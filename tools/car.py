@@ -48,7 +48,7 @@ def _summary(report):
     env = report.environment
     lines = [
         "android user: %d" % report.android_user,
-        "platform: %s" % (env["platform"] or "unresolved"),
+        "platform: %s" % env.get("platform", "unresolved"),
         "sdk: %d" % env["sdk"],
         "identity: %s" % (report.identity_source or "unavailable"),
         "writes: %s" % ("refused (read-only target)" if report.read_only

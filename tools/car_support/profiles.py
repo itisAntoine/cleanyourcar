@@ -17,6 +17,7 @@ _VERSION_CODE = re.compile(r"\bversionCode=(\d+)\b")
 _FLAGS = re.compile(r"^\s+(?:pkgFlags|flags)=\[(.*)\]")
 _PREFERRED_ITEM = re.compile(r"<item\b([^>]*)>(.*?)</item>", re.S)
 _ATTR = re.compile(r'(\w+)="([^"]*)"')
+_USER_INFO = re.compile(r"UserInfo\{([0-9]+):")
 _SIZE = re.compile(r"^(Physical|Override) size:\s*(\d+)x(\d+)\s*$")
 _DENSITY = re.compile(r"^(Physical|Override) density:\s*(\d+)\s*$")
 
@@ -67,7 +68,7 @@ def discover(client):
     environment = read_environment(client)
     if environment["sdk"] is None:
         raise DiscoveryError("ro.build.version.sdk is not a readable positive integer")
-    if environment["platform"] is None:
+    if "platform" not in environment:
         unresolved.append("platform")
     for key in sorted(BUILD_PROPERTIES):
         if key not in environment["buildProperties"]:
@@ -77,8 +78,12 @@ def discover(client):
     if identity is None:
         unresolved.append("target_identity")
 
+    user_confirmed = _user_exists(client)
+    if not user_confirmed:
+        unresolved.append("android_user")
     capabilities = _probe_capabilities(client, unresolved)
     packages, flags = _read_packages(client, capabilities, unresolved)
+    packages_resolved = not ({"packages", "packages.unparsed"} & set(unresolved))
     home = _read_home(client, capabilities, unresolved)
     display = _read_display(client, unresolved)
 
@@ -93,8 +98,16 @@ def discover(client):
         display=display,
         identity=identity,
         identity_source=source,
-        read_only=identity is None,
+        read_only=identity is None or not user_confirmed or not packages_resolved,
     )
+
+
+def _user_exists(client):
+    """True only when 'pm list users' positively lists the selected Android user."""
+    result = client.read(["pm", "list", "users"])
+    if result.returncode != 0:
+        return False
+    return client.android_user in {int(m) for m in _USER_INFO.findall(result.stdout)}
 
 
 def _probe_capabilities(client, unresolved):
@@ -152,7 +165,7 @@ def _read_packages(client, capabilities, unresolved):
 
 def _parse_package_dump(text):
     """Per-package metadata from the 'Packages:' section only (not hidden system copies)."""
-    details, current, in_section = {}, None, False
+    details, current, in_section, ambiguous = {}, None, False, set()
     for line in text.splitlines():
         if line.startswith("Packages:"):
             in_section = True
@@ -163,8 +176,14 @@ def _parse_package_dump(text):
             break
         header = _PACKAGE_HEADER.match(line)
         if header:
-            current = details.setdefault(header.group(1),
+            name = header.group(1)
+            if name in details:
+                # A repeated header can be injected through multi-line text such as
+                # versionName; neither block can be trusted.
+                ambiguous.add(name)
+            current = details.setdefault(name,
                                          {"system": False, "version_code": None, "users": {}})
+            current["_name"] = name
             continue
         if current is None:
             continue
@@ -176,8 +195,14 @@ def _parse_package_dump(text):
             current["system"] = True
         user = _USER_STATE.match(line)
         if user:
-            current["users"][int(user.group(1))] = (user.group(2) == "true",
-                                                    int(user.group(3)))
+            user_id = int(user.group(1))
+            if user_id in current["users"]:
+                ambiguous.add(current["_name"])
+            current["users"][user_id] = (user.group(2) == "true", int(user.group(3)))
+    for name in ambiguous:
+        del details[name]
+    for info in details.values():
+        info.pop("_name", None)
     return details
 
 
