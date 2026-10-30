@@ -1,0 +1,24 @@
+{
+  "description": "Sanitized read-only responses modeled on an API 30 aftermarket head unit with `cmd package` support. All identifiers are fake.",
+  "responses": {
+    "getprop ro.build.version.sdk": {"stdout": "30\n"},
+    "getprop ro.build.version.release": {"stdout": "11\n"},
+    "getprop ro.product.board": {"stdout": "fakeboard_v2\n"},
+    "getprop ro.product.name": {"stdout": "fakeproduct\n"},
+    "getprop ro.product.manufacturer": {"stdout": "FakeVendor\n"},
+    "getprop ro.build.display.id": {"stdout": "FAKE_HU_11_V100\n"},
+    "getprop ro.build.fingerprint": {"stdout": "FakeVendor/fakeproduct/fakeboard_v2:11/RP1A.000000.001/fake:user/release-keys\n"},
+    "getprop ro.serialno": {"stdout": "FAKEHWSN00000042\n"},
+    "getprop ro.boot.serialno": {"stdout": "FAKEHWSN00000042\n"},
+    "settings get --user 0 secure android_id": {"stdout": "8a7b6c5d4e3f2a1b\n"},
+    "pm list features": {"stdout": "feature:android.hardware.bluetooth\nfeature:android.software.home_screen\n"},
+    "cmd -l": {"stdout": "activity\naudio\npackage\nsettings\nwindow\n"},
+    "pm": {"returncode": 255, "stdout": "Package manager (package) commands:\n  help\n  list packages [-f] [-d] [-e] [-s] [-3] [-i] [-l] [-u] [-U] [--user USER_ID] [FILTER]\n  resolve-activity [--brief] [--components] [--user USER_ID] INTENT\n  query-activities [--brief] [--components] [--user USER_ID] INTENT\n  enable [--user USER_ID] PACKAGE_OR_COMPONENT\n  disable-user [--user USER_ID] PACKAGE_OR_COMPONENT\n  default-state [--user USER_ID] PACKAGE_OR_COMPONENT\n"},
+    "cmd package list packages --user 0": {"stdout": "package:android\npackage:com.android.launcher3\npackage:com.example.fakehome\npackage:com.example.fakebloat\n"},
+    "dumpsys package packages": {"stdout": "Packages:\n  Package [android] (1a2b3c):\n    userId=1000\n    versionCode=30 minSdk=30 targetSdk=30\n    flags=[ SYSTEM HAS_CODE PERSISTENT ]\n    User 0: ceDataInode=2 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false\n  Package [com.android.launcher3] (2b3c4d):\n    userId=10010\n    versionCode=30 minSdk=30 targetSdk=30\n    flags=[ SYSTEM HAS_CODE ]\n    User 0: ceDataInode=3 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false\n  Package [com.example.fakehome] (3c4d5e):\n    userId=10050\n    versionCode=12 minSdk=23 targetSdk=30\n    flags=[ HAS_CODE ]\n    User 0: ceDataInode=4 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=1 instant=false virtual=false\n  Package [com.example.fakebloat] (4d5e6f):\n    userId=10051\n    versionCode=2 minSdk=23 targetSdk=30\n    flags=[ SYSTEM HAS_CODE ]\n    User 0: ceDataInode=5 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=3 instant=false virtual=false\n"},
+    "cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.HOME": {"stdout": "2 activities found:\n  Activity #0:\n    priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=true\n    com.android.launcher3/.Launcher\n  Activity #1:\n    priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=true\n    com.example.fakehome/.HomeActivity\n"},
+    "cmd package resolve-activity --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.HOME": {"stdout": "priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=true\ncom.example.fakehome/.HomeActivity\n"},
+    "wm size": {"stdout": "Physical size: 1280x720\nOverride size: 1280x480\n"},
+    "wm density": {"stdout": "Physical density: 240\n"}
+  }
+}
