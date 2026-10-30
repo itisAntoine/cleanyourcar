@@ -133,12 +133,22 @@ public class ProfileMatcherTest {
     }
 
     @Test
-    public void match_genericFallbackOnlyWhenNoSpecificCandidate() throws Exception {
+    public void match_onlyGenericFallbackIsNotExact() throws Exception {
         EnvironmentFacts otherDevice = facts("aftermarket", 29, "manufacturer", "acme");
         ProfileMatcher.MatchResult result = ProfileMatcher.match(
                 Arrays.asList(xyauto(), generic()), otherDevice);
-        assertEquals(ProfileMatcher.Status.EXACT, result.status);
-        assertEquals("generic-android", result.profile().profileId);
+        assertEquals(ProfileMatcher.Status.UNKNOWN, result.status);
+        assertTrue(result.fallback);
+        assertNull(result.profile());
+        assertEquals(1, result.candidates.size());
+        assertEquals("generic-android", result.candidates.get(0).profileId);
+
+        ProfileMatcher.MatchResult specific = ProfileMatcher.match(
+                Arrays.asList(xyauto(), generic()), facts("aftermarket", 23, "board", BOARD,
+                        "manufacturer", "alps", "display", DISPLAY));
+        assertEquals(ProfileMatcher.Status.EXACT, specific.status);
+        assertFalse(specific.fallback);
+        assertEquals("xyauto-yt3518c", specific.profile().profileId);
     }
 
     @Test

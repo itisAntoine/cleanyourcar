@@ -36,7 +36,10 @@ public class CapabilityRegistryTest {
         deps.put(CapabilityRegistry.KEY_SAFETY_PROFILE, "safety-1");
         deps.put(CapabilityRegistry.KEY_NAVIGATION_APP, "com.google.android.apps.maps@1");
         deps.put(CapabilityRegistry.KEY_MEDIA_APP, "com.autochips.bluetooth@1");
-        deps.put(CapabilityRegistry.KEY_PERMISSIONS, "overlay+notifications");
+        deps.put(CapabilityRegistry.KEY_PERMISSION_OVERLAY, "granted");
+        deps.put(CapabilityRegistry.KEY_PERMISSION_BLE, "granted");
+        deps.put(CapabilityRegistry.KEY_PERMISSION_NOTIFICATION_LISTENER, "granted");
+        deps.put(CapabilityRegistry.KEY_PERMISSION_WRITE_SETTINGS, "granted");
         return deps;
     }
 
@@ -190,13 +193,35 @@ public class CapabilityRegistryTest {
 
     @Test
     public void invalidate_permissionAndUnknownKeys() {
-        Set<String> permission = CapabilityRegistry.invalidate(
-                ChangeSet.of(CapabilityRegistry.KEY_PERMISSIONS));
-        assertTrue(permission.contains(Capability.OVERLAY.id()));
-        assertFalse(permission.contains(Capability.HOME.id()));
-        assertFalse(permission.contains(Capability.REVERSE_DETECTION.id()));
+        assertEquals(Collections.singleton(Capability.MEDIA_METADATA.id()),
+                CapabilityRegistry.invalidate(ChangeSet.of(
+                        CapabilityRegistry.KEY_PERMISSION_NOTIFICATION_LISTENER)));
+        assertEquals(Collections.singleton(Capability.BRIGHTNESS.id()),
+                CapabilityRegistry.invalidate(ChangeSet.of(
+                        CapabilityRegistry.KEY_PERMISSION_WRITE_SETTINGS)));
 
         assertTrue(CapabilityRegistry.invalidate(ChangeSet.of()).isEmpty());
         assertThrows(IllegalArgumentException.class, () -> ChangeSet.of("theme"));
+        assertThrows(IllegalArgumentException.class, () -> ChangeSet.of("permission-state"));
+    }
+
+    @Test
+    public void invalidate_permissionRevocationOnlyAffectsDependentCapability() {
+        Set<String> overlay = CapabilityRegistry.invalidate(
+                ChangeSet.of(CapabilityRegistry.KEY_PERMISSION_OVERLAY));
+        assertEquals(Collections.singleton(Capability.OVERLAY.id()), overlay);
+        assertFalse(overlay.contains(Capability.BLE_RECEIVE.id()));
+
+        Set<String> ble = CapabilityRegistry.invalidate(
+                ChangeSet.of(CapabilityRegistry.KEY_PERMISSION_BLE));
+        assertEquals(Collections.singleton(Capability.BLE_RECEIVE.id()), ble);
+        assertFalse(ble.contains(Capability.OVERLAY.id()));
+
+        Map<String, String> bleRevoked = deps();
+        bleRevoked.put(CapabilityRegistry.KEY_PERMISSION_BLE, "denied");
+        assertTrue(CapabilityRegistry.evaluate(Capability.OVERLAY,
+                Evidence.verified(deps()), available(bleRevoked)).isReady());
+        assertFalse(CapabilityRegistry.evaluate(Capability.BLE_RECEIVE,
+                Evidence.verified(deps()), available(bleRevoked)).isReady());
     }
 }

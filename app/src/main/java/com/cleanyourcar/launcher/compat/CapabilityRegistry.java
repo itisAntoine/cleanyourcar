@@ -25,11 +25,18 @@ public final class CapabilityRegistry {
     public static final String KEY_NAVIGATION_APP = "navigation-app";
     /** Identity and version of the media role apps. */
     public static final String KEY_MEDIA_APP = "media-app";
-    public static final String KEY_PERMISSIONS = "permission-state";
+    /** Per-permission grant state, so revoking one invalidates only its dependents. */
+    public static final String KEY_PERMISSION_OVERLAY = "permission-overlay";
+    public static final String KEY_PERMISSION_BLE = "permission-ble";
+    public static final String KEY_PERMISSION_NOTIFICATION_LISTENER =
+            "permission-notification-listener";
+    public static final String KEY_PERMISSION_WRITE_SETTINGS = "permission-write-settings";
 
     public static final Set<String> DEPENDENCY_KEYS = Collections.unmodifiableSet(
             new LinkedHashSet<>(Arrays.asList(KEY_ENVIRONMENT, KEY_ADAPTER_REVISION,
-                    KEY_SAFETY_PROFILE, KEY_NAVIGATION_APP, KEY_MEDIA_APP, KEY_PERMISSIONS)));
+                    KEY_SAFETY_PROFILE, KEY_NAVIGATION_APP, KEY_MEDIA_APP, KEY_PERMISSION_OVERLAY,
+                    KEY_PERMISSION_BLE, KEY_PERMISSION_NOTIFICATION_LISTENER,
+                    KEY_PERMISSION_WRITE_SETTINGS)));
 
     public static final String BLOCKER_CONSENT_REQUIRED = "consent-required";
 
@@ -49,14 +56,14 @@ public final class CapabilityRegistry {
         HOME("home", KEY_ENVIRONMENT),
         MEDIA_TRANSPORT("media-transport", KEY_ENVIRONMENT, KEY_ADAPTER_REVISION, KEY_MEDIA_APP),
         MEDIA_METADATA("media-metadata", KEY_ENVIRONMENT, KEY_ADAPTER_REVISION, KEY_MEDIA_APP,
-                KEY_PERMISSIONS),
+                KEY_PERMISSION_NOTIFICATION_LISTENER),
         SOURCE_SELECTION("source-selection", KEY_ENVIRONMENT, KEY_ADAPTER_REVISION,
                 KEY_MEDIA_APP),
         REVERSE_DETECTION("reverse-detection", KEY_ENVIRONMENT, KEY_ADAPTER_REVISION,
                 KEY_SAFETY_PROFILE),
-        OVERLAY("overlay", KEY_ENVIRONMENT, KEY_SAFETY_PROFILE, KEY_PERMISSIONS),
-        BRIGHTNESS("brightness", KEY_ENVIRONMENT, KEY_PERMISSIONS),
-        BLE_RECEIVE("ble-receive", KEY_ENVIRONMENT, KEY_PERMISSIONS),
+        OVERLAY("overlay", KEY_ENVIRONMENT, KEY_SAFETY_PROFILE, KEY_PERMISSION_OVERLAY),
+        BRIGHTNESS("brightness", KEY_ENVIRONMENT, KEY_PERMISSION_WRITE_SETTINGS),
+        BLE_RECEIVE("ble-receive", KEY_ENVIRONMENT, KEY_PERMISSION_BLE),
         LAN_RECEIVE("lan-receive", KEY_ENVIRONMENT);
 
         private final String id;

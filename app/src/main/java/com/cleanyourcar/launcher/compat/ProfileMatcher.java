@@ -16,7 +16,8 @@ import java.util.TreeSet;
  * property is present and equal; otherwise it is partial and its absent keys are reported as
  * missing facts. A profile with a contradicting fact is never a candidate, so a shared
  * manufacturer alone never matches. Profiles that declare no build properties are generic
- * fallbacks, considered only when no profile with declared properties is a candidate.
+ * fallbacks: considered only when no profile with declared properties is a candidate, and then
+ * reported as UNKNOWN with {@link MatchResult#fallback} set, never as EXACT.
  */
 public final class ProfileMatcher {
 
@@ -38,9 +39,13 @@ public final class ProfileMatcher {
         public final List<DeviceProfile> candidates;
         /** Declared property keys absent from the environment (PARTIAL only). */
         public final Set<String> missingFacts;
+        /** True when candidates are only generic fallbacks; status is then UNKNOWN. */
+        public final boolean fallback;
 
-        MatchResult(Status status, List<DeviceProfile> candidates, Set<String> missingFacts) {
+        MatchResult(Status status, List<DeviceProfile> candidates, Set<String> missingFacts,
+                boolean fallback) {
             this.status = status;
+            this.fallback = fallback;
             this.candidates = Collections.unmodifiableList(new ArrayList<>(candidates));
             this.missingFacts = Collections.unmodifiableSet(new TreeSet<>(missingFacts));
         }
@@ -92,20 +97,14 @@ public final class ProfileMatcher {
 
         Set<String> none = Collections.emptySet();
         if (exact.size() == 1) {
-            return new MatchResult(Status.EXACT, exact, none);
+            return new MatchResult(Status.EXACT, exact, none, false);
         }
         if (exact.size() > 1) {
-            return new MatchResult(Status.CONFLICT, exact, none);
+            return new MatchResult(Status.CONFLICT, exact, none, false);
         }
         if (!partial.isEmpty()) {
-            return new MatchResult(Status.PARTIAL, partial, missing);
+            return new MatchResult(Status.PARTIAL, partial, missing, false);
         }
-        if (fallbacks.size() == 1) {
-            return new MatchResult(Status.EXACT, fallbacks, none);
-        }
-        if (fallbacks.size() > 1) {
-            return new MatchResult(Status.CONFLICT, fallbacks, none);
-        }
-        return new MatchResult(Status.UNKNOWN, Collections.<DeviceProfile>emptyList(), none);
+        return new MatchResult(Status.UNKNOWN, fallbacks, none, !fallbacks.isEmpty());
     }
 }
