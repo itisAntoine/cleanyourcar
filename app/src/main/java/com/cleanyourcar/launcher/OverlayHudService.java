@@ -62,15 +62,21 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         }
 
         /**
-         * Applies an adapter reverse state. UNKNOWN keeps the last trusted state (fail-closed:
-         * it never clears an active reverse); HUD gating for unknown devices is decided elsewhere.
+         * Applies an adapter reverse state and returns whether window visibility must be
+         * re-synced. UNKNOWN is ignored: it keeps the last known reverse state, so the HUD stays
+         * visible while reverse is UNKNOWN. Fail-closed HUD gating for UNKNOWN reverse is
+         * implemented in a later task.
          */
-        public void onReverseState(MediaState.ReverseState state) {
+        public boolean onReverseState(MediaState.ReverseState state) {
             if (state == MediaState.ReverseState.ACTIVE) {
                 inReverse = true;
-            } else if (state == MediaState.ReverseState.INACTIVE) {
-                inReverse = false;
+                return true;
             }
+            if (state == MediaState.ReverseState.INACTIVE) {
+                inReverse = false;
+                return true;
+            }
+            return false;
         }
 
         public boolean isActive() {
@@ -601,8 +607,11 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         if (state == MediaState.ReverseState.ACTIVE) {
             PlusCodeDialog.dismissActive();
         }
-        stateMachine.onReverseState(state);
-        syncWindowVisibility();
+        // UNKNOWN (published on adapter start) must not sync: that would race the overscan
+        // applied by onStartCommand.
+        if (stateMachine.onReverseState(state)) {
+            syncWindowVisibility();
+        }
     }
 
     @Override

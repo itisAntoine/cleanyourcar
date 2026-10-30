@@ -50,6 +50,7 @@ public final class ConfigurationStore {
     static final String CORRUPT_SUFFIX = ".corrupt-";
     private static final String VISIBILITY_CURATED = "curated";
     private static final String VISIBILITY_DISCOVERED = "discovered";
+    private static final String LEGACY_XYAUTO_USER = "legacyXyAutoUser";
 
     /** Legacy package override keys and the roles they migrate to. */
     private static final Map<String, Role> LEGACY_ROLE_KEYS = legacyRoleKeys();
@@ -424,7 +425,9 @@ public final class ConfigurationStore {
             boolean upgradedInstall) {
         LauncherConfiguration.Builder builder = LauncherConfiguration.builder();
         builder.migrationVersion = LauncherConfiguration.MIGRATION_VERSION;
-        builder.curatedAppVisibility = upgradedInstall || !legacy.isEmpty();
+        boolean existingInstall = upgradedInstall || !legacy.isEmpty();
+        builder.curatedAppVisibility = existingInstall;
+        builder.legacyXyAutoUser = existingInstall;
         for (Map.Entry<String, Role> entry : LEGACY_ROLE_KEYS.entrySet()) {
             Object value = legacy.get(entry.getKey());
             if (value instanceof String && !((String) value).trim().isEmpty()) {
@@ -503,6 +506,7 @@ public final class ConfigurationStore {
             root.put("formatVersion", FORMAT_VERSION);
             root.put("migrationVersion", config.migrationVersion);
             root.put("appVisibility", visibility(config));
+            root.put(LEGACY_XYAUTO_USER, config.legacyXyAutoUser);
             if (config.acceptedProfileId != null) {
                 JSONObject profile = new JSONObject();
                 profile.put("id", config.acceptedProfileId);
@@ -571,6 +575,10 @@ public final class ConfigurationStore {
         builder.migrationVersion = root.getInt("migrationVersion");
         builder.curatedAppVisibility =
                 !VISIBILITY_DISCOVERED.equals(root.optString("appVisibility"));
+        // Files written before this flag existed: appVisibility was then fixed at migration
+        // from the same existing-install signal, so it is a faithful one-time fallback.
+        builder.legacyXyAutoUser = root.has(LEGACY_XYAUTO_USER)
+                ? root.getBoolean(LEGACY_XYAUTO_USER) : builder.curatedAppVisibility;
         JSONObject profile = root.optJSONObject("profile");
         if (profile != null) {
             builder.acceptedProfileId = profile.getString("id");

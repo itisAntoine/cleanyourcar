@@ -242,6 +242,35 @@ public class ConfigurationStoreTest {
     }
 
     @Test
+    public void legacyXyAutoUser_isIndependentOfAppVisibility() throws Exception {
+        FakeStorage legacyStorage = new FakeStorage();
+        migratedStore(legacyStorage, "legacy-prefs-ui-only.json");
+        LauncherConfiguration legacy = reopenWithAppVisibility(legacyStorage, "discovered");
+        assertFalse(legacy.curatedAppVisibility);
+        assertTrue(legacy.legacyXyAutoUser);
+        assertEquals("xyauto-yt3518c", com.cleanyourcar.launcher.integration.IntegrationController
+                .selectAdapterId(legacy.acceptedAdapterId, legacy.legacyXyAutoUser));
+
+        FakeStorage freshStorage = new FakeStorage();
+        new ConfigurationStore(freshStorage, APP_VERSION)
+                .migrateLegacy(new HashMap<String, Object>(), false);
+        LauncherConfiguration fresh = reopenWithAppVisibility(freshStorage, "curated");
+        assertTrue(fresh.curatedAppVisibility);
+        assertFalse(fresh.legacyXyAutoUser);
+        assertEquals("generic", com.cleanyourcar.launcher.integration.IntegrationController
+                .selectAdapterId(fresh.acceptedAdapterId, fresh.legacyXyAutoUser));
+    }
+
+    private static LauncherConfiguration reopenWithAppVisibility(FakeStorage storage,
+            String visibility) throws Exception {
+        JSONObject stored = new JSONObject(new String(storage.read(), StandardCharsets.UTF_8));
+        stored.put("appVisibility", visibility);
+        storage.bytes = stored.toString().getBytes(StandardCharsets.UTF_8);
+        return new ConfigurationStore(storage, APP_VERSION)
+                .migrateLegacy(new HashMap<String, Object>()).configuration;
+    }
+
+    @Test
     public void import_failedWriteKeepsPreviousConfig() throws Exception {
         FakeStorage storage = new FakeStorage();
         ConfigurationStore store = migratedStore(storage, "legacy-prefs-existing-user.json");
@@ -385,6 +414,7 @@ public class ConfigurationStoreTest {
         assertFalse(exported.contains("navigationCity"));
         assertFalse(exported.contains("versionCode"));
         assertFalse(exported.contains("10.0452"));
+        assertFalse(exported.contains("legacyXyAutoUser"));
 
         assertEquals("xyauto-yt3518c", json.getJSONObject("profile").getString("id"));
         assertEquals("com.waze", json.getJSONObject("roleOverrides")

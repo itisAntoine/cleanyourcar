@@ -39,6 +39,12 @@ public final class LauncherConfiguration {
     public final Map<Role, RoleSelection> roles;
     /** True keeps the curated car-app list; false shows all discovered launchable apps. */
     public final boolean curatedAppVisibility;
+    /**
+     * True when this install existed before profiles (migrated from legacy preferences or an
+     * upgraded install); such users keep the XYAuto integration until they accept a profile.
+     * Fixed at migration; device-local and never exported.
+     */
+    public final boolean legacyXyAutoUser;
     public final UiPreferences ui;
     /** Explicit saved navigation reference city preset index, or null when never chosen. */
     public final Integer navigationCityIndex;
@@ -53,6 +59,7 @@ public final class LauncherConfiguration {
         this.profileRoleDefaults = immutableRoles(builder.profileRoleDefaults);
         this.roleOverrides = immutableRoles(builder.roleOverrides);
         this.curatedAppVisibility = builder.curatedAppVisibility;
+        this.legacyXyAutoUser = builder.legacyXyAutoUser;
         this.ui = builder.ui;
         this.navigationCityIndex = builder.navigationCityIndex;
         this.validationKeys = Collections.unmodifiableMap(new TreeMap<>(builder.validationKeys));
@@ -89,6 +96,7 @@ public final class LauncherConfiguration {
         builder.profileRoleDefaults.putAll(profileRoleDefaults);
         builder.roleOverrides.putAll(roleOverrides);
         builder.curatedAppVisibility = curatedAppVisibility;
+        builder.legacyXyAutoUser = legacyXyAutoUser;
         builder.ui = ui;
         builder.navigationCityIndex = navigationCityIndex;
         builder.validationKeys.putAll(validationKeys);
@@ -140,6 +148,7 @@ public final class LauncherConfiguration {
         final Map<Role, RoleSelection> profileRoleDefaults = new EnumMap<>(Role.class);
         final Map<Role, RoleSelection> roleOverrides = new EnumMap<>(Role.class);
         boolean curatedAppVisibility = true;
+        boolean legacyXyAutoUser;
         UiPreferences ui = UiPreferences.defaults();
         Integer navigationCityIndex;
         final Map<String, String> validationKeys = new TreeMap<>();

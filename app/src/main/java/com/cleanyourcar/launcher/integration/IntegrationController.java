@@ -61,8 +61,7 @@ public final class IntegrationController {
         final Context app = context.getApplicationContext() != null
                 ? context.getApplicationContext() : context;
         LauncherConfiguration config = ConfigurationStore.get(app).load(app);
-        // curatedAppVisibility is fixed at migration time: true for upgraded/legacy installs.
-        String adapterId = selectAdapterId(config.acceptedAdapterId, config.curatedAppVisibility);
+        String adapterId = selectAdapterId(config.acceptedAdapterId, config.legacyXyAutoUser);
         return create(adapterId, PROCESS, new AndroidBroadcastTransport(),
                 new AudioManagerMediaKeyTransport(), new GenericAndroidAdapter.ReadinessCheck() {
                     @Override
