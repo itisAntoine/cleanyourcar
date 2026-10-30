@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">CleanYourCar</string>
+    <string name="status_ready">BT • Sẵn sàng</string>
+    <string name="status_live_nav">MAPS LIVE</string>
+    <string name="music_bt">📱 Nhạc Bluetooth</string>
+    <string name="music_usb">🔌 Nhạc USB</string>
+    <string name="music_ready_title">Sẵn sàng phát nhạc</string>
+    <string name="music_bt_subtitle">YouTube Music • iPhone Bluetooth</string>
+    <string name="music_usb_subtitle">GalaMusic • Ổ đĩa USB</string>
+    <string name="nav_card_header">🧭 CHỈ ĐƯỜNG OFFLINE / BLE</string>
+    <string name="btn_open_maps_live">🗺️ Maps Live</string>
+    <string name="btn_plus_code">🔢 Mã 6 ký tự</string>
+    <string name="utility_card_header">🎛️ TIỆN ÍCH XE</string>
+    <string name="btn_dashcam">📷 Cam Trước</string>
+    <string name="btn_equalizer">🎚️ Equalizer</string>
+    <string name="btn_brightness">🔆 Độ sáng</string>
+    <string name="btn_screensaver">🌙 Màn chờ</string>
+    <string name="btn_collapse_panel">Thu gọn ❯</string>
+    <string name="btn_expand_panel">❮ Mở khung</string>
+    <string name="app_library_tile">➕ Thư viện App</string>
+    <string name="settings_tile">🎨 Tùy biến UI</string>
+</resources>

@@ -1,0 +1,45 @@
+# Verified Safe Debloat List for XYAuto YT3518C (mt3561s / evb3561sv_w_65_m0)
+# Firmware: YT3518C_00008_V008 | True OS: Android 6.0 (SDK 23) | RAM: 2 GB
+#
+# Safety rule: Only reversible `pm disable-user` is used. Never `pm uninstall`.
+# Protected vehicle packages (Backcar reverse camera, Bluetooth, CANBus, USB Music,
+# Equalizer/APS, Front Dashcam, Google Maps, GMS) are strictly preserved.
+
+# --- 1. XYAuto / MediaTek Background Bloatware & Telemetry (~115 MB RAM) ---
+com.pve.otacheck
+com.bumblebee.remindeasy
+com.mediatek.ppl
+com.xyauto.clockweather
+com.pve.musicwidget
+com.acloud.xy.search
+com.acloud.stub.logoselector
+com.xyauto.factorytestapp
+com.mediatek.mtklogger
+com.mediatek.ygps
+com.mediatek.lbs.em2.ui
+com.mediatek.engineermode
+com.mediatek.omacp
+
+# --- 2. Unused Navigation, Calendar & Cloud Sync Services (~110 MB RAM) ---
+com.papago.stt2navi
+com.android.calendar
+com.android.providers.calendar
+com.google.android.syncadapters.calendar
+com.mediatek.calendarimporter
+com.google.android.syncadapters.contacts
+com.google.android.backuptransport
+com.google.android.feedback
+com.google.android.partnersetup
+com.google.android.onetimeinitializer
+com.android.browser
+com.android.soundrecorder
+com.android.wallpaper.livepicker
+com.android.wallpaper
+com.mediatek.rcs.blacklist
+
+# --- 3. Unused Video Players, Gallery & Background Play Store (~350 MB RAM) ---
+# (Can be re-enabled anytime via `tools/restore.sh` or `adb shell pm enable <pkg>`)
+com.acloud.stub.video
+com.mxtech.videoplayer.ad
+com.android.gallery3d
+com.android.vending

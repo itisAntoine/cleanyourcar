@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.CleanYourCar" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg_canvas</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:colorPrimary">@color/glass_primary</item>
+        <item name="android:colorAccent">@color/glass_primary</item>
+    </style>
+</resources>

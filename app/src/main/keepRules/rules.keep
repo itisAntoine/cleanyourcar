@@ -1,0 +1,9 @@
+# Add project specific R8 rules here.
+# AGP will combine all keep rule files in src/main/keepRules to pass to R8
+
+-keep class com.cleanyourcar.launcher.MainActivity { *; }
+-keep class com.cleanyourcar.launcher.ClockActivity { *; }
+-keep class com.cleanyourcar.launcher.NavDispatchActivity { *; }
+-keep class com.cleanyourcar.launcher.OverlayHudService { *; }
+-keep class com.cleanyourcar.launcher.BackActionService { *; }
+
