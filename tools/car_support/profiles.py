@@ -17,7 +17,7 @@ _VERSION_CODE = re.compile(r"\bversionCode=(\d+)\b")
 _FLAGS = re.compile(r"^\s+(?:pkgFlags|flags)=\[(.*)\]")
 _PREFERRED_ITEM = re.compile(r"<item\b([^>]*)>(.*?)</item>", re.S)
 _ATTR = re.compile(r'(\w+)="([^"]*)"')
-_USER_INFO = re.compile(r"UserInfo\{([0-9]+):")
+_USER_INFO = re.compile(r"^\s*UserInfo\{([0-9]+):", re.M)
 _SIZE = re.compile(r"^(Physical|Override) size:\s*(\d+)x(\d+)\s*$")
 _DENSITY = re.compile(r"^(Physical|Override) density:\s*(\d+)\s*$")
 
@@ -151,7 +151,7 @@ def _read_packages(client, capabilities, unresolved):
     packages, flags = {}, {}
     for name in sorted(names):
         info = details.get(name, {})
-        packages[name] = {"system": info.get("system", False),
+        packages[name] = {"system": info.get("system"),
                           "version_code": info.get("version_code")}
         if name not in details:
             unresolved.append("packages.%s.metadata" % name)

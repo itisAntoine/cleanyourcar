@@ -335,6 +335,14 @@ class DiscoveryTest(NoRealAdbTestCase):
                 self.assertIn("android_user", report.unresolved_facts)
         self.assertFalse(discover(client_for(FakeAdb(api30()))).read_only)
 
+    def test_user_name_cannot_forge_user_entry(self):
+        responses = api30()
+        responses["pm list users"] = {
+            "stdout": "Users:\n\tUserInfo{0:x} UserInfo{7:fake:13} running\n"}
+        report = discover(client_for(FakeAdb(responses), user=7))
+        self.assertIn("android_user", report.unresolved_facts)
+        self.assertTrue(report.read_only)
+
     def test_unresolved_packages_force_read_only(self):
         responses = api30()
         responses["cmd package list packages --user 0"] = {"returncode": 1, "stderr": "x\n"}
@@ -355,6 +363,8 @@ class DiscoveryTest(NoRealAdbTestCase):
         self.assertNotIn("com.android.launcher3", report.package_flags)
         self.assertIn("package_flags.com.android.launcher3", report.unresolved_facts)
         self.assertEqual(report.packages["com.android.launcher3"]["version_code"], None)
+        self.assertIsNone(report.packages["com.android.launcher3"]["system"])
+        self.assertIs(report.packages["com.example.fakebloat"]["system"], True)
         self.assertEqual(report.package_flags["com.example.fakebloat"], 3)
 
 
