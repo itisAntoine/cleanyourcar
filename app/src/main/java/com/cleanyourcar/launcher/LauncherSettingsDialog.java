@@ -247,6 +247,17 @@ public final class LauncherSettingsDialog {
                         renderRef[0]
                 );
 
+                SetupUi.addRow(list, SetupUi.button(context, p,
+                        I18n.tr(context, I18n.KEY_SETUP_ENTRY), false,
+                        new View.OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                dialog.dismiss();
+                                context.startActivity(new android.content.Intent(context,
+                                        SetupActivity.class));
+                            }
+                        }));
+
                 scroll.addView(list);
                 root.addView(scroll, slp);
 

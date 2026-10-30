@@ -32,6 +32,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     sourceSets {
+        getByName("main") {
+            assets.directories.add(rootProject.file("profiles/devices").path)
+        }
         getByName("test") {
             resources.directories.add(rootProject.file("profiles/fixtures").path)
         }

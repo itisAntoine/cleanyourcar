@@ -19,6 +19,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.cleanyourcar.launcher.config.RoleSelection;
 import com.cleanyourcar.launcher.integration.HeadUnitAdapter;
 import com.cleanyourcar.launcher.integration.IntegrationController;
 import com.cleanyourcar.launcher.integration.MediaState;
@@ -76,6 +77,9 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         super.onCreate(savedInstanceState);
         setupSwipeDetector();
         rebuildFullUi();
+        if (savedInstanceState == null) {
+            SetupActivity.maybeAutoOpen(this);
+        }
     }
 
     @Override
@@ -740,11 +744,12 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
             View tile = createAppTileView(p, entry.label, entry.icon, VectorIcons.ICON_GRID, new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    if (CarIntentRouter.PKG_GOOGLE_MAPS.equals(entry.packageName)) {
-                        CarIntentRouter.launchGoogleMapsLive(MainActivity.this);
-                    } else {
-                        CarIntentRouter.launchPackage(MainActivity.this, entry.packageName);
+                    // A navigation app opened from the grid keeps the framing overlay.
+                    if (entry.packageName.equals(CarIntentRouter.getTargetPackage(
+                            MainActivity.this, RoleSelection.Role.NAVIGATION))) {
+                        CarIntentRouter.startOverlayService(MainActivity.this);
                     }
+                    CarIntentRouter.launchPackage(MainActivity.this, entry.packageName);
                 }
             }, new View.OnLongClickListener() {
                 @Override

@@ -48,6 +48,11 @@ public final class LauncherConfiguration {
     public final UiPreferences ui;
     /** Explicit saved navigation reference city preset index, or null when never chosen. */
     public final Integer navigationCityIndex;
+    /**
+     * Explicit Plus Code reference derived from {@link #navigationCityIndex}; a city saved by an
+     * earlier version is kept as an explicit choice. {@code NONE} when never chosen.
+     */
+    public final NavigationReference.SavedReference savedNavigationReference;
     /** Local verification keyed by capability ID; device-specific and never exported. */
     public final Map<String, String> validationKeys;
 
@@ -62,6 +67,8 @@ public final class LauncherConfiguration {
         this.legacyXyAutoUser = builder.legacyXyAutoUser;
         this.ui = builder.ui;
         this.navigationCityIndex = builder.navigationCityIndex;
+        this.savedNavigationReference =
+                NavigationReference.SavedReference.fromCityIndex(navigationCityIndex);
         this.validationKeys = Collections.unmodifiableMap(new TreeMap<>(builder.validationKeys));
 
         Map<Role, RoleSelection> effective = new EnumMap<>(Role.class);

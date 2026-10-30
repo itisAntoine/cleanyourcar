@@ -4,8 +4,6 @@ import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
-import android.location.Location;
-import android.location.LocationManager;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -16,9 +14,13 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.cleanyourcar.launcher.config.ConfigurationStore;
+import com.cleanyourcar.launcher.config.NavigationReference;
+
 /**
- * State 5: Offline 6-Character Plus Code Keypad Modal.
- * Pure-math Open Location Code input (23456789CFGHJMPQRVWX+) with Vietnamese city preset selector.
+ * State 5: Offline Plus Code Keypad Modal.
+ * Pure-math Open Location Code input (23456789CFGHJMPQRVWX+). Short codes use a fresh current
+ * location or the explicitly chosen city preset; full codes need no reference.
  */
 public final class PlusCodeDialog {
     private static final String[] KEYS = new String[] {
@@ -26,6 +28,9 @@ public final class PlusCodeDialog {
             "9", "C", "F", "G", "H", "J", "M",
             "P", "Q", "R", "V", "W", "X", "⌫"
     };
+
+    /** Long enough for a full 11-character code typed without '+'. */
+    private static final int MAX_CODE_LENGTH = 11;
 
     private static Dialog activeDialog;
 
@@ -58,12 +63,8 @@ public final class PlusCodeDialog {
         }
 
         final StringBuilder buffer = new StringBuilder();
-        final int[] cityIndex = new int[] {
-                ThemeConfig.prefs(context).getInt(ThemeConfig.KEY_CITY_INDEX, 0)
-        };
-        if (cityIndex[0] < 0 || cityIndex[0] >= PlusCodeCodec.VIETNAM_PRESETS.length) {
-            cityIndex[0] = 0;
-        }
+        // -1 means no city was chosen; there is no implicit default city.
+        final int[] cityIndex = new int[] {savedCityIndex(context)};
 
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -86,7 +87,7 @@ public final class PlusCodeDialog {
         header.addView(title, titleLp);
 
         final TextView cityBtn = new TextView(context);
-        cityBtn.setText("📍 " + PlusCodeCodec.VIETNAM_PRESETS[cityIndex[0]].name + " ▾");
+        cityBtn.setText(cityLabel(context, cityIndex[0]));
         cityBtn.setTextColor(p.textSecondary);
         cityBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         cityBtn.setTypeface(Typeface.DEFAULT_BOLD);
@@ -96,9 +97,11 @@ public final class PlusCodeDialog {
         cityBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                cityIndex[0] = (cityIndex[0] + 1) % PlusCodeCodec.VIETNAM_PRESETS.length;
-                ThemeConfig.prefs(context).edit().putInt(ThemeConfig.KEY_CITY_INDEX, cityIndex[0]).apply();
-                cityBtn.setText("📍 " + PlusCodeCodec.VIETNAM_PRESETS[cityIndex[0]].name + " ▾");
+                // Cycles through the presets and back to "no city".
+                cityIndex[0] = cityIndex[0] + 1 >= PlusCodeCodec.VIETNAM_PRESETS.length
+                        ? -1 : cityIndex[0] + 1;
+                saveCityIndex(context, cityIndex[0]);
+                cityBtn.setText(cityLabel(context, cityIndex[0]));
             }
         });
         header.addView(cityBtn);
@@ -123,6 +126,13 @@ public final class PlusCodeDialog {
         });
         header.addView(closeBtn, closeLp);
         root.addView(header);
+
+        TextView parkedHint = new TextView(context);
+        parkedHint.setText(I18n.tr(context, I18n.KEY_SETUP_PARKED));
+        parkedHint.setTextColor(p.textSecondary);
+        parkedHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        parkedHint.setPadding(0, 6, 0, 0);
+        root.addView(parkedHint);
 
         // Input Display + Go CTA Row
         LinearLayout inputRow = new LinearLayout(context);
@@ -157,28 +167,24 @@ public final class PlusCodeDialog {
             @Override
             public void onClick(View v) {
                 String raw = buffer.toString().trim();
-                PlusCodeCodec.CityPreset preset = PlusCodeCodec.VIETNAM_PRESETS[cityIndex[0]];
-                double refLat = preset.lat;
-                double refLon = preset.lon;
-                try {
-                    LocationManager lm = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
-                    if (lm != null) {
-                        Location loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                        if (loc != null && Math.abs(loc.getLatitude()) > 0.1) {
-                            refLat = loc.getLatitude();
-                            refLon = loc.getLongitude();
-                        }
+                NavigationReference.ReferenceResult reference = null;
+                if (NavPayloadParser.requiresReference(raw)) {
+                    reference = NavDispatchActivity.currentReference(context);
+                    if (!reference.available) {
+                        Toast.makeText(context, I18n.tr(context, I18n.KEY_NEED_REFERENCE),
+                                Toast.LENGTH_LONG).show();
+                        return;
                     }
-                } catch (SecurityException ignored) {
                 }
-
-                PlusCodeCodec.LatLon decoded = PlusCodeCodec.decode(raw, refLat, refLon);
+                PlusCodeCodec.LatLon decoded = PlusCodeCodec.isValidCode(raw)
+                        ? NavPayloadParser.parse(raw, reference) : null;
                 if (decoded == null) {
-                    Toast.makeText(context, "Hãy nhập đủ 6 ký tự (VD: QMVX2P)", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context, I18n.tr(context, I18n.KEY_INVALID_DESTINATION),
+                            Toast.LENGTH_SHORT).show();
                     return;
                 }
                 dialog.dismiss();
-                CarIntentRouter.launchCoordinatesInMapsLive(context, decoded.lat, decoded.lon, decoded.label);
+                CarIntentRouter.launchNavigation(context, decoded);
             }
         });
         inputRow.addView(goBtn);
@@ -212,7 +218,7 @@ public final class PlusCodeDialog {
                         if (buffer.length() > 0) {
                             buffer.deleteCharAt(buffer.length() - 1);
                         }
-                    } else if (buffer.length() < 6) {
+                    } else if (buffer.length() < MAX_CODE_LENGTH) {
                         buffer.append(key);
                     }
                     if (buffer.length() == 0) {
@@ -234,5 +240,25 @@ public final class PlusCodeDialog {
             dialog.getWindow().setLayout(620, WindowManager.LayoutParams.WRAP_CONTENT);
         }
         dialog.show();
+    }
+
+    private static int savedCityIndex(Context context) {
+        NavigationReference.SavedReference saved =
+                ConfigurationStore.get(context).load(context).savedNavigationReference;
+        return saved.present ? saved.cityIndex : -1;
+    }
+
+    private static void saveCityIndex(Context context, int index) {
+        if (index < 0) {
+            ThemeConfig.prefs(context).edit().remove(ThemeConfig.KEY_CITY_INDEX).apply();
+        } else {
+            ThemeConfig.prefs(context).edit().putInt(ThemeConfig.KEY_CITY_INDEX, index).apply();
+        }
+    }
+
+    private static String cityLabel(Context context, int index) {
+        String name = index < 0 ? I18n.tr(context, I18n.KEY_CHOOSE_CITY)
+                : PlusCodeCodec.VIETNAM_PRESETS[index].name;
+        return "📍 " + name + " ▾";
     }
 }
