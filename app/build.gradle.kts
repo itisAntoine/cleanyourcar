@@ -38,6 +38,9 @@ android {
         getByName("test") {
             resources.directories.add(rootProject.file("profiles/fixtures").path)
         }
+        getByName("androidTest") {
+            assets.directories.add(rootProject.file("profiles/fixtures").path)
+        }
     }
 }
 
@@ -47,5 +50,6 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.json.test)
     // androidTestImplementation(libs.espresso.core)
-    // androidTestImplementation(libs.ext.junit)
+    androidTestImplementation(libs.ext.junit)
+    androidTestImplementation(libs.test.runner)
 }

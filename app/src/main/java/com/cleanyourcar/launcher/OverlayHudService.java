@@ -242,7 +242,7 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         }
         apply(decision);
         if (!stateMachine.isActive()) {
-            stopSelf();
+            endService();
             return START_NOT_STICKY;
         }
         onMediaStateChanged(integration.mediaState());
@@ -267,8 +267,18 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
     private void requestCollapsed(boolean collapse) {
         apply(sessionStillValid() ? policy.requestCollapsed(collapse) : closedDecision());
         if (!stateMachine.isActive()) {
-            stopSelf();
+            endService();
         }
+    }
+
+    /** Stops this service after a session closed; instrumentation tests observe this call. */
+    void endService() {
+        stopSelf();
+    }
+
+    /** Whether any HUD overlay window is currently attached. */
+    boolean hasOverlayWindows() {
+        return rightPanelView != null || collapsedPillView != null;
     }
 
     @Override
@@ -361,7 +371,7 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         Intent home = new Intent(OverlayHudService.this, MainActivity.class);
         home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(home);
-        stopSelf();
+        endService();
     }
 
     private View buildExpandedMusicPanel(final ThemeConfig.Palette p) {
@@ -712,7 +722,7 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
             return;
         }
         apply(policy.onReverseState(state));
-        stopSelf();
+        endService();
     }
 
     @Override
@@ -720,7 +730,7 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         MediaStateText.reportHealth(this, health, reason);
         if (health == HeadUnitAdapter.Health.FAILED && stateMachine.isActive()) {
             apply(policy.onIntegrationLost());
-            stopSelf();
+            endService();
         }
     }
 }

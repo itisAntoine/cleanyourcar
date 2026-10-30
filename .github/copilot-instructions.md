@@ -12,22 +12,23 @@ Use the Gradle wrapper (`./gradlew`) from the repository root:
 - **Assemble Debug APK:** `./gradlew :app:assembleDebug`
 - **Assemble Release APK:** `./gradlew :app:assembleRelease`
 - **Run Android Lint:** `./gradlew :app:lintDebug`
-- **Run all local unit tests:** `./gradlew :app:testDebugUnitTest`
-- **Run a single unit test class:** `./gradlew :app:testDebugUnitTest --tests "com.cleanyourcar.launcher.ExampleUnitTest"`
-- **Run a single unit test method:** `./gradlew :app:testDebugUnitTest --tests "com.cleanyourcar.launcher.ExampleUnitTest.addition_isCorrect"`
+- **Run all local unit tests:** `./gradlew :app:testDebugUnitTest :navbridge:testDebugUnitTest`
+- **Run a single unit test class:** `./gradlew :app:testDebugUnitTest --tests "com.cleanyourcar.launcher.RoleRoutingTest"`
+- **Run a single unit test method:** `./gradlew :app:testDebugUnitTest --tests "com.cleanyourcar.launcher.RoleRoutingTest.restrictedLaunchIsReportedWithoutTryingAnotherRoute"`
+- **Compile instrumented tests (no device needed):** `./gradlew :app:assembleDebugAndroidTest`
 - **Run instrumented tests (requires connected device/emulator):** `./gradlew :app:connectedDebugAndroidTest`
-- **Run a single instrumented test class:** `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.cleanyourcar.launcher.ExampleInstrumentedTest`
+- **Run a single instrumented test class:** `./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.cleanyourcar.launcher.SetupCompatibilityTest`
 
-> **Note:** In `app/build.gradle.kts`, library and test dependencies (`appcompat`, `material`, `junit`, `espresso-core`, `ext-junit`) are declared in `gradle/libs.versions.toml` but currently commented out in the `dependencies` block. Uncomment the relevant catalog entries before compiling code or running tests that depend on them (`Theme.CleanYourCar` in `res/values/themes.xml` inherits from `Theme.MaterialComponents.DayNight.DarkActionBar`, which requires `libs.material` / `libs.appcompat` during resource linking).
+> **Note:** `appcompat`, `material` and `espresso-core` are declared in `gradle/libs.versions.toml` but intentionally left commented out in `app/build.gradle.kts`. The app theme (`Theme.CleanYourCar`) inherits from the framework `android:Theme.Material.NoActionBar` and needs no support library. Only `junit` and `json` (unit tests) and `ext-junit` plus `androidx.test:runner` (instrumented tests) are enabled; do not add runtime UI dependencies.
 
 ## Architecture & Project Structure
 
-- **Single-Module Android Application:** Only `:app` is included in `settings.gradle.kts`, with namespace and `applicationId` set to `com.cleanyourcar.launcher`.
+- **Two Android Modules:** `settings.gradle.kts` includes `:app` (the launcher; namespace and `applicationId` `com.cleanyourcar.launcher`) and `:navbridge` (the optional navigation bridge companion at `addons/nav-bridge`, namespace `com.cleanyourcar.navbridge`). Only `:navbridge` may declare `INTERNET`; `:app` must not.
 - **Toolchain & SDK Configuration:**
   - Gradle `9.6.0` with Android Gradle Plugin (AGP) `9.4.1` and Kotlin DSL (`.gradle.kts`).
-  - Gradle Daemon JVM toolchain is pinned to Java 25 (`gradle/gradle-daemon-jvm.properties` via Foojay resolver), while app source/target compatibility is Java 11 (`compileSdk = 37`, `minSdk = 26`, `targetSdk = 37`).
+  - Gradle Daemon JVM toolchain is pinned to Java 25 (`gradle/gradle-daemon-jvm.properties` via Foojay resolver), while app source/target compatibility is Java 11 (`compileSdk = 37`, `minSdk = 23`, `targetSdk = 37`).
   - Gradle configuration cache is enabled by default (`org.gradle.configuration-cache=true` in `gradle.properties`); any custom Gradle tasks or build logic must be configuration-cache compatible.
-- **Current Scaffold State:** The project is at initial scaffold state with no `Activity` or main source code under `app/src/main/java` yet.
+- **Current State:** Working multi-device launcher. Sources are in `app/src/main/java/com/cleanyourcar/launcher` (with `compat`, `config`, `integration` and `layout` subpackages). Device profiles are in `profiles/` (schema, bundled devices, test fixtures). Compatibility and contribution docs are in `docs/`.
 
 ## Key Conventions
 

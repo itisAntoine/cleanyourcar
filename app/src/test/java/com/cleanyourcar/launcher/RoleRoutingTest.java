@@ -253,6 +253,73 @@ public class RoleRoutingTest {
         assertEquals(3, overlay.shown);
     }
 
+    @Test
+    public void restrictedLaunchIsReportedWithoutTryingAnotherRoute() throws IOException {
+        ConfigurationStore legacyStore = store();
+        legacyStore.migrateLegacy(Collections.<String, Object>emptyMap(), true);
+        FakeTransport restricted = new FakeTransport();
+        restricted.outcome = LaunchResult.failed(LaunchResult.Reason.NOT_PERMITTED);
+
+        LaunchResult dashcam = CarIntentRouter.launchRole(
+                CarIntentRouter.resolveRole(legacyStore.current(), Role.DASHCAM), restricted);
+        assertEquals(LaunchResult.Reason.NOT_PERMITTED, dashcam.reason);
+        assertEquals(Collections.singletonList("component " + CarIntentRouter.PKG_DASHCAM + "/"
+                + CarIntentRouter.CLS_DASHCAM_MAIN), restricted.calls);
+
+        restricted.calls.clear();
+        LaunchResult equalizer = CarIntentRouter.launchRole(
+                CarIntentRouter.resolveRole(legacyStore.current(), Role.EQUALIZER), restricted);
+        assertEquals(LaunchResult.Reason.NOT_PERMITTED, equalizer.reason);
+        assertEquals(1, restricted.calls.size());
+
+        // A missing component (not a restriction) still falls back to the package entry.
+        FakeTransport missing = new FakeTransport();
+        missing.outcome = LaunchResult.failed(LaunchResult.Reason.NOT_FOUND);
+        CarIntentRouter.launchRole(
+                CarIntentRouter.resolveRole(legacyStore.current(), Role.DASHCAM), missing);
+        assertEquals(2, missing.calls.size());
+    }
+
+    @Test
+    public void deniedHudRequestRemovesAnAlreadyShowingOverlay() {
+        final HudSessionPolicy shipped = new HudSessionPolicy(
+                com.cleanyourcar.launcher.compat.EnvironmentFacts.PLATFORM_AFTERMARKET,
+                com.cleanyourcar.launcher.integration.HeadUnitAdapter.ReverseSupport
+                        .UNVERIFIED_EVENTS);
+        FakeOverlay start = new FakeOverlay();
+        FakeOverlay stop = new FakeOverlay();
+        CarIntentRouter.gatedOverlay(new CarIntentRouter.HudGate() {
+            @Override
+            public HudSessionPolicy.Decision requestShow() {
+                return shipped.requestShow(HudSessionPolicyTest.readyOverlay(),
+                        com.cleanyourcar.launcher.integration.MediaState.ReverseState.INACTIVE,
+                        true);
+            }
+
+            @Override
+            public void explainDenial(HudSessionPolicy.Reason reason) {
+            }
+        }, start, stop).show();
+        assertEquals(0, start.shown);
+        assertEquals(1, stop.shown);
+
+        final HudSessionPolicy verified = HudSessionPolicyTest.verifiedPolicy();
+        CarIntentRouter.gatedOverlay(new CarIntentRouter.HudGate() {
+            @Override
+            public HudSessionPolicy.Decision requestShow() {
+                return verified.requestShow(HudSessionPolicyTest.readyOverlay(),
+                        com.cleanyourcar.launcher.integration.MediaState.ReverseState.INACTIVE,
+                        true);
+            }
+
+            @Override
+            public void explainDenial(HudSessionPolicy.Reason reason) {
+            }
+        }, start, stop).show();
+        assertEquals(1, start.shown);
+        assertEquals(1, stop.shown);
+    }
+
     private static ConfigurationStore newInstallStore() throws IOException {
         ConfigurationStore store = store();
         store.migrateLegacy(Collections.<String, Object>emptyMap(), false);

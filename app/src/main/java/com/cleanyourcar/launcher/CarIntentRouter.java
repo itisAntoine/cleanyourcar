@@ -202,7 +202,11 @@ public final class CarIntentRouter {
         }
     }
 
-    /** Opens the role's app using only its validated strategy. */
+    /**
+     * Opens the role's app using only its validated strategy. A route refused by the system
+     * (NOT_PERMITTED, e.g. an AAOS driving restriction) is reported as is; no other route is
+     * tried for the same request.
+     */
     public static LaunchResult launchRole(ResolvedRole resolved, Transport transport) {
         if (resolved == null || !resolved.isAvailable()) {
             return LaunchResult.blocked(LaunchResult.Reason.ROLE_UNAVAILABLE);
@@ -214,16 +218,19 @@ public final class CarIntentRouter {
                         && PKG_EQUALIZER.equals(selection.packageName));
         if (xyAutoEqualizer) {
             result = transport.startAction(ACTION_XY_APS);
-            if (result.isLaunched()) return result;
+            if (result.isLaunched() || isRestricted(result)) return result;
         }
         String[] component = componentFor(resolved);
         if (component != null) {
             result = transport.launchComponent(component[0], component[1]);
-            if (result.isLaunched()) return result;
+            if (result.isLaunched() || isRestricted(result)) return result;
         }
-        LaunchResult byPackage = transport.launchPackage(selection.packageName);
-        return byPackage.isLaunched() || result.reason != LaunchResult.Reason.NOT_PERMITTED
-                ? byPackage : result;
+        return transport.launchPackage(selection.packageName);
+    }
+
+    /** The system refused the launch; it must be explained, never retried another way. */
+    static boolean isRestricted(LaunchResult result) {
+        return result != null && result.reason == LaunchResult.Reason.NOT_PERMITTED;
     }
 
     /**
@@ -334,6 +341,15 @@ public final class CarIntentRouter {
      * screen and the denial is explained.
      */
     static Overlay gatedOverlay(final HudGate gate, final Overlay start) {
+        return gatedOverlay(gate, start, null);
+    }
+
+    /**
+     * Like {@link #gatedOverlay(HudGate, Overlay)}; a denied request also removes an overlay
+     * that is already showing from an earlier session by running {@code stopShowing}.
+     */
+    static Overlay gatedOverlay(final HudGate gate, final Overlay start,
+            final Overlay stopShowing) {
         return new Overlay() {
             @Override
             public void show() {
@@ -341,6 +357,9 @@ public final class CarIntentRouter {
                 if (decision.isShow()) {
                     start.show();
                 } else if (decision.action == HudSessionPolicy.Action.DENY) {
+                    if (stopShowing != null) {
+                        stopShowing.show();
+                    }
                     gate.explainDenial(decision.reason);
                 }
             }
@@ -365,6 +384,11 @@ public final class CarIntentRouter {
             @Override
             public void show() {
                 startOverlayService(context);
+            }
+        }, new Overlay() {
+            @Override
+            public void show() {
+                stopOverlayService(context);
             }
         });
     }
@@ -401,11 +425,18 @@ public final class CarIntentRouter {
         if (result.isLaunched()) {
             return;
         }
+        if (isRestricted(result)) {
+            toastFailure(context, result);
+            return;
+        }
         // Standard Android audio panels are generic, not XYAuto defaults.
         try {
             Intent eq = new Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL);
             eq.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(eq);
+            return;
+        } catch (SecurityException e) {
+            toast(context, I18n.tr(context, I18n.KEY_SYSTEM_RESTRICTED));
             return;
         } catch (Exception ignored) {
         }
@@ -420,17 +451,25 @@ public final class CarIntentRouter {
         } else {
             LaunchResult result = launchRole(resolveRole(context, Role.BLUETOOTH_MUSIC),
                     new AndroidTransport(context));
-            if (!result.isLaunched()) {
+            if (isRestricted(result)) {
+                toastFailure(context, result);
+            } else if (!result.isLaunched()) {
                 launchSystemSettings(context, Settings.ACTION_BLUETOOTH_SETTINGS);
             }
         }
     }
 
+    /**
+     * Opens a settings panel. A missing panel falls back to the main settings screen; a panel
+     * refused by the system is explained and not replaced by another route.
+     */
     public static void launchSystemSettings(Context context, String action) {
         try {
             Intent intent = new Intent(action);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(intent);
+        } catch (SecurityException e) {
+            toast(context, I18n.tr(context, I18n.KEY_SYSTEM_RESTRICTED));
         } catch (Exception e) {
             try {
                 Intent fallback = new Intent(Settings.ACTION_SETTINGS);
@@ -518,6 +557,9 @@ public final class CarIntentRouter {
                 break;
             case INVALID_DESTINATION:
                 key = I18n.KEY_INVALID_DESTINATION;
+                break;
+            case NOT_PERMITTED:
+                key = I18n.KEY_SYSTEM_RESTRICTED;
                 break;
             default:
                 key = I18n.KEY_APP_NOT_FOUND;
