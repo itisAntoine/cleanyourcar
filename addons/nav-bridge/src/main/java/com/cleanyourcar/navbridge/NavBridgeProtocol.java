@@ -8,7 +8,9 @@ import java.net.URLDecoder;
 import java.util.UUID;
 
 /**
- * Shared protocol constants and payload extractor for BLE GATT and Hotspot Burst navigation bridge.
+ * Shared protocol constants for the BLE GATT and LAN (HTTP) navigation bridge, plus the explicit
+ * launcher destination hand-off. Listeners only dispatch requests accepted by
+ * {@link BridgeRequestHandler}.
  */
 public final class NavBridgeProtocol {
     public static final UUID SERVICE_UUID = UUID.fromString("0000c910-0000-1000-8000-00805f9b34fb");
@@ -19,9 +21,21 @@ public final class NavBridgeProtocol {
     public static final String TARGET_ACT = "com.cleanyourcar.launcher.NavDispatchActivity";
     public static final String ACTION_NAVIGATE = "com.cleanyourcar.launcher.action.NAVIGATE";
 
+    /** Maximum size of a whole HTTP request or BLE envelope. */
+    public static final int MAX_REQUEST_BYTES = 4096;
+    /** Maximum size of the destination payload after decoding. */
+    public static final int MAX_PAYLOAD_BYTES = 1024;
+    public static final int SOCKET_READ_TIMEOUT_MS = 2000;
+    public static final String HTTP_PATH = "/nav";
+    /** First line of a version 1 BLE envelope: {@code CYC-NAV/1\n<clientId>.<token>\n<payload>}. */
+    public static final String BLE_ENVELOPE_V1 = "CYC-NAV/1";
+
     private NavBridgeProtocol() {
     }
 
+    /**
+     * Legacy unauthenticated extractor kept for compatibility tests; listeners no longer use it.
+     */
     public static String extractQueryFromHttpOrRaw(String requestOrDatagram) {
         if (requestOrDatagram == null) return "";
         String trimmed = requestOrDatagram.trim();
@@ -52,7 +66,7 @@ public final class NavBridgeProtocol {
         return urlDecode(trimmed);
     }
 
-    private static String urlDecode(String s) {
+    static String urlDecode(String s) {
         try {
             return URLDecoder.decode(s.replace("+", "%2B"), "UTF-8").trim();
         } catch (Exception e) {

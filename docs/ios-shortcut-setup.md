@@ -14,32 +14,62 @@
 
 ---
 
-## Cách 2: "Chớp Hotspot" bằng iOS Shortcut thuần (1 chạm từ Google Maps iPhone, tự tắt Hotspot)
+## Thiết lập chung cho Cách 2 và Cách 3 (bắt buộc, tùy chọn bật)
 
-Không cần cài bất kỳ app bên thứ ba nào trên iPhone — chỉ dùng ứng dụng **Phím tắt (Shortcuts)** có sẵn của Apple:
+Mô-đun `addons/nav-bridge` là APK **tùy chọn** và **mặc định tắt**: không tự lắng nghe, không tự khởi động sau khi cập nhật, và **từ chối mọi điểm đến không kèm token**.
+
+1. Trên đầu xe, mở ứng dụng **CarPlay Nav Bridge**.
+2. Bật phương thức muốn dùng: **Nhận qua Bluetooth LE** và/hoặc **Nhận qua mạng nội bộ (HTTP)**.
+3. Bấm **Token mới** để tạo token ghép đôi (dạng `<16 ký tự hex>.<64 ký tự hex>`). Token được lưu riêng tư trên đầu xe, không sao lưu, không chia sẻ cho ứng dụng khác. Tạo token mới sẽ thu hồi token cũ; bấm **Thu hồi** để vô hiệu hóa ngay.
+4. Bấm **Quyền** (nếu Android yêu cầu) rồi **Bắt đầu**. Màn hình hiển thị trạng thái thật của từng phương thức (`đang nhận`, `lỗi`, `không khả dụng`…), không báo thành công khi chưa thực sự lắng nghe.
+5. (Tùy chọn) Bật **Tự khởi động sau khi bật máy** nếu muốn bridge tự chạy lại sau khi khởi động đầu xe.
+
+> **Người dùng bản cũ:** sau khi cập nhật, bridge **tạm dừng** và hiện thông báo giải thích một lần. Phím tắt iOS cũ (không có token), gói UDP, và chuỗi BLE thô đều bị từ chối — cần làm lại theo hướng dẫn dưới đây.
+
+Giới hạn: yêu cầu HTTP tối đa 4 KiB, nội dung điểm đến (`q`) tối đa 1 KiB; mỗi yêu cầu hợp lệ mở đúng một lần chỉ đường.
+
+---
+
+## Cách 2: "Chớp Hotspot" bằng iOS Shortcut có xác thực (1 chạm từ Google Maps iPhone)
+
+Không cần cài app bên thứ ba trên iPhone — chỉ dùng ứng dụng **Phím tắt (Shortcuts)** của Apple.
+
+> ⚠️ **Token không phải là mã hóa đường truyền.** Yêu cầu đi bằng HTTP thuần; ai cùng mạng có thể đọc được token và điểm đến. Chỉ dùng trên **mạng tin cậy** (ví dụ Hotspot của chính iPhone bạn), không dùng trên Wi-Fi công cộng.
+>
+> Trên **Android 14 trở lên**, nhận qua LAN **không khả dụng** (không có loại dịch vụ nền hợp lệ cho phép); bridge sẽ báo `không khả dụng` thay vì chạy lén. Hãy dùng Cách 3.
 
 ### Thiết lập 1 lần trên iPhone:
-1. Mở app **Phím tắt (Shortcuts)** trên iPhone → bấm **`+`** tạo phím tắt mới tên là **"Gửi lên Xe"**.
-2. Bật tùy chọn **Hiển thị trong Bảng chia sẻ (Show in Share Sheet)** (nhận loại *URL* và *Bản đồ / Địa điểm*).
-3. Thêm lần lượt 5 hành động (Actions) có sẵn trong iOS:
-   - **Bước 1:** `Lấy URL từ Đầu vào (Get URLs from Input)` → `Mở rộng URL (Expand URL)` (để giải mã link rút gọn `maps.app.goo.gl/...`).
+1. Mở **Phím tắt** → bấm **`+`** tạo phím tắt mới tên **"Gửi lên Xe"**, bật **Hiển thị trong Bảng chia sẻ** (nhận *URL* và *Bản đồ / Địa điểm*).
+2. Thêm lần lượt các hành động:
+   - **Bước 1:** `Lấy URL từ Đầu vào` → `Mở rộng URL` (giải mã link rút gọn `maps.app.goo.gl/...`) → `Mã hóa URL (URL Encode)`.
    - **Bước 2:** `Bật Điểm truy cập cá nhân (Set Personal Hotspot -> On)`.
-   - **Bước 3:** `Chờ 6 giây (Wait 6 seconds)` (để đầu xe tự động bắt vào Wi-Fi Hotspot của iPhone).
+   - **Bước 3:** `Chờ 6 giây` (để đầu xe kết nối vào Hotspot).
    - **Bước 4:** `Lấy nội dung của URL (Get Contents of URL)`:
-     `http://<IP-Của-Xe-Trong-Hotspot>:48920/nav?q=[URL đã mở rộng]`
-     *(Mẹo: Trên mạng Hotspot iPhone, đầu xe luôn được cấp IP cố định dạng `172.20.10.2` hoặc `172.20.10.3`).*
+     - URL: `http://<địa chỉ hiển thị trong mục "Địa chỉ mạng nội bộ" của bridge>:48920/nav?q=[URL đã mã hóa]`
+     - Phương thức: `GET`
+     - **Tiêu đề (Headers):** khóa `Authorization`, giá trị `Bearer <token ghép đôi>`
+     - *Không* đặt token vào URL — tham số khác ngoài `q` sẽ bị từ chối.
    - **Bước 5:** `Tắt Điểm truy cập cá nhân (Set Personal Hotspot -> Off)`.
+3. Địa chỉ của đầu xe **không cố định**: nó do mạng cấp và có thể thay đổi. Mỗi khi đổi mạng hoặc khi phím tắt báo lỗi kết nối, hãy xem lại mục **Địa chỉ mạng nội bộ** trong bridge và cập nhật URL.
+
+Phản hồi: `200` = đã mở chỉ đường; `401` = thiếu/sai token; `400` = yêu cầu sai định dạng; `413` = quá giới hạn kích thước.
 
 ---
 
 ## Cách 3: Bắn qua Bluetooth BLE GATT (`CarPlayNav`) — Không ngắt nhạc YouTube Music
 
-Mô-đun `addons/nav-bridge` trên xe luôn mở sẵn dịch vụ **BLE GATT Server**:
+Khi đã bật **Nhận qua Bluetooth LE** và bấm **Bắt đầu**, đầu xe mở dịch vụ **BLE GATT Server**:
 - **Service UUID:** `0000c910-0000-1000-8000-00805f9b34fb`
 - **Characteristic UUID (Write / Write Without Response):** `0000c911-0000-1000-8000-00805f9b34fb`
-- **Định dạng chuỗi UTF-8 chấp nhận:**
+- **Định dạng tin nhắn bắt buộc (UTF-8, 3 dòng, phân tách bằng `\n`):**
+  ```
+  CYC-NAV/1
+  <token ghép đôi>
+  <điểm đến>
+  ```
+- **Điểm đến** chấp nhận (tối đa 1 KiB):
   - Tọa độ trực tiếp: `10.7769,106.7009`
   - Mã Plus Code: `QMVX+2P`
   - Đường dẫn Google Maps: `https://www.google.com/maps/place/.../@10.7769,106.7009,17z`
 
-Bạn có thể dùng bất kỳ công cụ BLE nào trên iPhone (như *nRF Connect*, *LightBlue*, *Bluefy*, hoặc App iOS riêng) ghi chuỗi tọa độ vào Characteristic `0000c911-0000-1000-8000-00805f9b34fb` là màn hình xe lập tức nhảy sang **Google Maps Live**!
+Chuỗi thô kiểu cũ (chỉ có điểm đến, không có dòng `CYC-NAV/1` và token) sẽ bị từ chối. Dùng công cụ BLE trên iPhone (như *nRF Connect*, *LightBlue*, *Bluefy*, hoặc app iOS riêng) ghi tin nhắn trên vào Characteristic `0000c911-...`; với tin nhắn dài, dùng chế độ ghi dài (Write with response / prepared write).

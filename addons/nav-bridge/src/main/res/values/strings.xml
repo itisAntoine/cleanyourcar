@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">CarPlay Nav Bridge</string>
+    <string name="bridge_intro">Optional companion that receives destinations from your phone over Bluetooth LE or the local network and forwards them to CleanYourCar. It stays off until you enable a method, create a token and press Start.</string>
+    <string name="bridge_pause_title">Nav Bridge is paused</string>
+    <string name="bridge_pause_short">Automatic startup now waits for setup. Tap to set up.</string>
+    <string name="bridge_pause_body">Since this update, the bridge no longer starts by itself and no longer accepts unauthenticated destinations. Enable BLE and/or LAN, create a pairing token, update your phone shortcut to send it, then press Start. Old shortcuts without a token are rejected.</string>
+    <string name="bridge_enable_ble">Receive over Bluetooth LE</string>
+    <string name="bridge_enable_lan">Receive over local network (HTTP)</string>
+    <string name="bridge_enable_autostart">Start automatically after boot</string>
+    <string name="bridge_token_title">Pairing token</string>
+    <string name="bridge_token_help">Send this exact value as \"Authorization: Bearer &lt;token&gt;\" (HTTP) or as line 2 of a CYC-NAV/1 BLE message. Generating a new token revokes the old one.</string>
+    <string name="bridge_token_none">No token. Generate one to pair your phone.</string>
+    <string name="bridge_token_generate">New token</string>
+    <string name="bridge_token_revoke">Revoke</string>
+    <string name="bridge_token_generated">New token created. Update your phone shortcut, then press Start.</string>
+    <string name="bridge_lan_title">Local network address</string>
+    <string name="bridge_lan_no_address">No local network address right now. Connect this unit to Wi-Fi or your phone\'s hotspot.</string>
+    <string name="bridge_lan_warning">The token is not encryption: anyone on the same network can read plain HTTP traffic. Use LAN reception only on a network you trust, such as your own phone\'s hotspot. Addresses change between networks; check this screen instead of assuming a fixed address.</string>
+    <string name="bridge_permissions">Permissions</string>
+    <string name="bridge_permissions_none_needed">No runtime permission is needed on this Android version.</string>
+    <string name="bridge_start">Start</string>
+    <string name="bridge_stop">Stop</string>
+    <string name="bridge_start_denied">The bridge was not started. See the reasons on screen.</string>
+    <string name="bridge_running">Bridge: running</string>
+    <string name="bridge_stopped">Bridge: stopped</string>
+    <string name="bridge_status_ble">BLE: %1$s%2$s</string>
+    <string name="bridge_status_lan">LAN: %1$s%2$s</string>
+    <string name="bridge_last_error">Last error: %1$s</string>
+    <string name="bridge_not_configured">Setup incomplete: enable at least one method and create a token.</string>
+    <string name="bridge_state_off">off</string>
+    <string name="bridge_state_starting">starting (not yet confirmed)</string>
+    <string name="bridge_state_active">receiving</string>
+    <string name="bridge_state_failed">failed</string>
+    <string name="bridge_state_unavailable">unavailable</string>
+    <string name="bridge_reason_not_opted_in">No receive method is enabled.</string>
+    <string name="bridge_reason_no_credential">No pairing token. Generate one first.</string>
+    <string name="bridge_reason_autostart">Automatic start is not enabled.</string>
+    <string name="bridge_reason_notifications">Notification permission is missing; the bridge cannot show that it is running.</string>
+    <string name="bridge_reason_bt_permission">Bluetooth permission (Nearby devices) is missing.</string>
+    <string name="bridge_reason_bt_unavailable">This device has no usable Bluetooth LE adapter.</string>
+    <string name="bridge_reason_bt_disabled">Bluetooth is turned off.</string>
+    <string name="bridge_reason_ble_advertising">This device cannot advertise as a BLE peripheral.</string>
+    <string name="bridge_reason_lan_lifecycle">LAN reception is unavailable on this Android version: no permitted background service type covers it.</string>
+    <string name="bridge_notification_starting">Starting navigation bridge…</string>
+    <string name="bridge_notification_status">BLE: %1$s · LAN: %2$s</string>
+    <string name="bridge_channel_status">Bridge status</string>
+    <string name="bridge_channel_notice">Bridge notices</string>
+</resources>
