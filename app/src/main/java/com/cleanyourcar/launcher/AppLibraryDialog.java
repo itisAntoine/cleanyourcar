@@ -59,7 +59,7 @@ public final class AppLibraryDialog {
         closeBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         closeBtn.setTypeface(Typeface.DEFAULT_BOLD);
         closeBtn.setPadding(AdaptiveUi.dp(context, 16), AdaptiveUi.dp(context, 8), AdaptiveUi.dp(context, 16), AdaptiveUi.dp(context, 8));
-closeBtn.setMinHeight(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+        closeBtn.setMinHeight(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
         closeBtn.setMinWidth(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
         closeBtn.setGravity(Gravity.CENTER);
         closeBtn.setBackground(ThemeConfig.createInteractiveTileDrawable(

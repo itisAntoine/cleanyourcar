@@ -88,7 +88,7 @@ final class CompatibilityDialog {
         SetupUi.addRow(list, SetupUi.button(context, p, I18n.tr(context, I18n.KEY_CLOSE), false,
                 SetupUi.dismissOnClick(dialog)));
         root.addView(scroll(context, list));
-        SetupUi.showDialog(dialog, root);
+        SetupUi.showDialog(dialog, root, false);
     }
 
     /** Lists what accepting the profile changes; applies it only after explicit confirmation. */
@@ -141,7 +141,7 @@ final class CompatibilityDialog {
         SetupUi.addRow(list, SetupUi.button(context, p, I18n.tr(context, I18n.KEY_CANCEL), false,
                 SetupUi.dismissOnClick(dialog)));
         root.addView(scroll(context, list));
-        SetupUi.showDialog(dialog, root);
+        SetupUi.showDialog(dialog, root, false);
     }
 
     /** Validates an imported document fully before previewing it. */

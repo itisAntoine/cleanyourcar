@@ -94,7 +94,8 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
             public void onLayoutChange(View v, int left, int top, int right, int bottom,
                     int oldLeft, int oldTop, int oldRight, int oldBottom) {
                 if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
-                    v.post(refitRunnable);
+                    v.removeCallbacks(refitRunnable);
+                    v.postDelayed(refitRunnable, AdaptiveUi.REFIT_DEBOUNCE_MS);
                 }
             }
         });
@@ -503,7 +504,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         midRow.setOrientation(LinearLayout.HORIZONTAL);
         midRow.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams midLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                ViewGroup.LayoutParams.MATCH_PARENT, weightedCardHeight(), 1f);
 
         FrameLayout albumArt = new FrameLayout(this);
         albumArt.setBackground(ThemeConfig.createGlassCardDrawable(
@@ -620,14 +621,14 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         navCard.setBackground(ThemeConfig.createGlassCardDrawable(
                 dpf(24f), p.cardTop, p.cardBottom, p.borderLuminous, 1));
         LinearLayout.LayoutParams navLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1.12f);
+                ViewGroup.LayoutParams.MATCH_PARENT, weightedCardHeight(), 1.12f);
         navLp.bottomMargin = dp(14);
 
         LinearLayout dateBlock = new LinearLayout(this);
         dateBlock.setOrientation(LinearLayout.VERTICAL);
         dateBlock.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                ViewGroup.LayoutParams.MATCH_PARENT, weightedCardHeight(), 1f);
 
         dateHeaderText = new TextView(this);
         dateHeaderText.setText(VietnameseDateFormatter.formatToday(new Date()));
@@ -680,12 +681,12 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         utilCard.setBackground(ThemeConfig.createGlassCardDrawable(
                 dpf(24f), p.cardTop, p.cardBottom, p.borderLuminous, 1));
         LinearLayout.LayoutParams utilLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0.88f);
+                ViewGroup.LayoutParams.MATCH_PARENT, weightedCardHeight(), 0.88f);
 
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams r1Lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                ViewGroup.LayoutParams.MATCH_PARENT, weightedCardHeight(), 1f);
         r1Lp.bottomMargin = dp(10);
 
         View camBtn = createLiquidActionLens(p, I18n.tr(this, I18n.KEY_DASHCAM), VectorIcons.ICON_CAMERA, p.tileDefault, p.borderLuminous, new View.OnClickListener() {
@@ -714,7 +715,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
             }
         });
         LinearLayout.LayoutParams r2Lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                ViewGroup.LayoutParams.MATCH_PARENT, weightedCardHeight(), 1f);
         utilCard.addView(nightBtn, r2Lp);
 
         col.addView(utilCard, utilLp);
@@ -993,6 +994,15 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
     @Override
     public void onHealthChanged(HeadUnitAdapter.Health health, String reason) {
         MediaStateText.reportHealth(this, health, reason);
+    }
+
+    /**
+     * Height for weighted dashboard cards: the original 0-height + weight split when the
+     * side-by-side dashboard fits, otherwise wrap content so the scroller can grow.
+     */
+    private int weightedCardHeight() {
+        return spec != null && spec.mode == LayoutPolicy.Mode.SPLIT && !spec.dashboardScrolls
+                ? 0 : ViewGroup.LayoutParams.WRAP_CONTENT;
     }
 
     private int dp(float value) {

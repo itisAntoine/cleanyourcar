@@ -19,7 +19,15 @@ import com.cleanyourcar.launcher.layout.LayoutPolicy;
 /** Android glue for {@link LayoutPolicy}: dp conversion, window metrics, bounded dialogs. */
 final class AdaptiveUi {
 
+    /** Delay that coalesces bursts of resize/inset callbacks into a single refit. */
+    static final long REFIT_DEBOUNCE_MS = 100L;
+
     private AdaptiveUi() {
+    }
+
+    /** Receives the dialog bounds whenever they are (re)computed for the current window. */
+    interface OnBoundsChanged {
+        void onBounds(LayoutPolicy.LayoutSpec spec);
     }
 
     static int dp(Context context, float value) {
@@ -34,7 +42,11 @@ final class AdaptiveUi {
 
     /** Policy for the context's current window configuration (before a view is measured). */
     static LayoutPolicy.LayoutSpec specFor(Context context) {
-        Configuration config = context.getResources().getConfiguration();
+        return specFor(context, context.getResources().getConfiguration());
+    }
+
+    /** Policy for an explicit configuration, e.g. one delivered by a configuration change. */
+    static LayoutPolicy.LayoutSpec specFor(Context context, Configuration config) {
         int widthDp = config.screenWidthDp;
         int heightDp = config.screenHeightDp;
         if (widthDp <= 0 || heightDp <= 0) {
@@ -82,7 +94,10 @@ final class AdaptiveUi {
                 if (v.getPaddingLeft() != left || v.getPaddingTop() != top
                         || v.getPaddingRight() != right || v.getPaddingBottom() != bottom) {
                     v.setPadding(left, top, right, bottom);
-                    if (onChanged != null) v.post(onChanged);
+                    if (onChanged != null) {
+                        v.removeCallbacks(onChanged);
+                        v.postDelayed(onChanged, REFIT_DEBOUNCE_MS);
+                    }
                 }
                 return insets;
             }
@@ -115,9 +130,34 @@ final class AdaptiveUi {
      * content scrolls; otherwise {@code root} must contain its own scroller.
      */
     static void showBounded(Dialog dialog, View root, int preferredWidthDp, boolean scrollWhole) {
-        Context context = dialog.getContext();
-        LayoutPolicy.LayoutSpec spec = specFor(context);
-        MaxHeightFrame frame = new MaxHeightFrame(context, dp(context, spec.dialogMaxHeightDp));
+        showBounded(dialog, root, preferredWidthDp, scrollWhole, null);
+    }
+
+    /**
+     * Like {@link #showBounded(Dialog, View, int, boolean)}, and re-applies the width and height
+     * bounds whenever the window is rotated or resized while the dialog is open. {@code onBounds}
+     * is called once before showing and again after every change of the computed bounds.
+     */
+    static void showBounded(final Dialog dialog, View root, final int preferredWidthDp,
+            boolean scrollWhole, final OnBoundsChanged onBounds) {
+        final Context context = dialog.getContext();
+        final MaxHeightFrame frame = new MaxHeightFrame(context);
+        final LayoutPolicy.LayoutSpec[] applied = new LayoutPolicy.LayoutSpec[1];
+        final ConfigListener rebound = new ConfigListener() {
+            @Override
+            public void onConfiguration(Configuration config) {
+                LayoutPolicy.LayoutSpec spec = specFor(context, config);
+                if (spec.equals(applied[0])) return;
+                applied[0] = spec;
+                frame.setMaxHeightPx(dp(context, spec.dialogMaxHeightDp));
+                if (dialog.getWindow() != null) {
+                    dialog.getWindow().setLayout(dp(context, spec.dialogWidthDp(preferredWidthDp)),
+                            WindowManager.LayoutParams.WRAP_CONTENT);
+                }
+                if (onBounds != null) onBounds.onBounds(spec);
+            }
+        };
+        frame.setConfigListener(rebound);
         View content = root;
         if (scrollWhole) {
             ScrollView scroll = new ScrollView(context);
@@ -129,10 +169,34 @@ final class AdaptiveUi {
         dialog.setContentView(frame);
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0x00000000));
-            dialog.getWindow().setLayout(dp(context, spec.dialogWidthDp(preferredWidthDp)),
-                    WindowManager.LayoutParams.WRAP_CONTENT);
         }
+        rebound.onConfiguration(context.getResources().getConfiguration());
         dialog.show();
+        if (dialog.getWindow() != null) {
+            // Fallback for resizes that reach the dialog without a configuration callback
+            // (e.g. multi-window bounds changes within the same configuration bucket).
+            dialog.getWindow().getDecorView().addOnLayoutChangeListener(
+                    new View.OnLayoutChangeListener() {
+                        @Override
+                        public void onLayoutChange(View v, int l, int t, int r, int b,
+                                int ol, int ot, int or, int ob) {
+                            v.removeCallbacks(recheck);
+                            v.post(recheck);
+                        }
+
+                        private final Runnable recheck = new Runnable() {
+                            @Override
+                            public void run() {
+                                rebound.onConfiguration(
+                                        context.getResources().getConfiguration());
+                            }
+                        };
+                    });
+        }
+    }
+
+    interface ConfigListener {
+        void onConfiguration(Configuration config);
     }
 
     /** FrameLayout that caps its measured height so inner scrollers take over. */
@@ -147,9 +211,27 @@ final class AdaptiveUi {
             super(context, attrs);
         }
 
+        private ConfigListener configListener;
+
         MaxHeightFrame(Context context, int maxHeightPx) {
             super(context);
             this.maxHeightPx = maxHeightPx;
+        }
+
+        void setMaxHeightPx(int maxHeightPx) {
+            if (this.maxHeightPx == maxHeightPx) return;
+            this.maxHeightPx = maxHeightPx;
+            requestLayout();
+        }
+
+        void setConfigListener(ConfigListener listener) {
+            configListener = listener;
+        }
+
+        @Override
+        protected void onConfigurationChanged(Configuration newConfig) {
+            super.onConfigurationChanged(newConfig);
+            if (configListener != null) configListener.onConfiguration(newConfig);
         }
 
         @Override

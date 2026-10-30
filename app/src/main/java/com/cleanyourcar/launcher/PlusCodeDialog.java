@@ -25,10 +25,9 @@ import com.cleanyourcar.launcher.config.NavigationReference;
  */
 public final class PlusCodeDialog {
     private static final int DIALOG_WIDTH_DP = 620;
-    private static final int DIALOG_PADDING_DP = 22;
+    private static final int DIALOG_PADDING_DP = LayoutPolicy.KEYPAD_PADDING_DP;
     private static final int KEY_HEIGHT_DP = 58;
-    private static final int KEY_MARGIN_DP = 5;
-    private static final int MAX_KEY_COLUMNS = 7;
+    private static final int KEY_MARGIN_DP = LayoutPolicy.KEYPAD_KEY_MARGIN_DP;
     private static final String[] KEYS = new String[] {
             "2", "3", "4", "5", "6", "7", "8",
             "9", "C", "F", "G", "H", "J", "M",
@@ -204,11 +203,9 @@ public final class PlusCodeDialog {
         root.addView(inputRow, inputRowLp);
 
         // 21-button keypad: 7 columns x 3 rows when it fits; fewer, wider rows in narrow windows.
-        int dialogWidthDp = AdaptiveUi.specFor(context).dialogWidthDp(DIALOG_WIDTH_DP);
-        int keyColumns = LayoutPolicy.fitColumns(dialogWidthDp - 2 * DIALOG_PADDING_DP,
-                LayoutPolicy.MIN_TOUCH_TARGET_DP, 2 * KEY_MARGIN_DP, MAX_KEY_COLUMNS);
-        GridLayout grid = new GridLayout(context);
-        grid.setColumnCount(keyColumns);
+        // Columns are recomputed whenever the dialog bounds change (rotation, resize).
+        final GridLayout grid = new GridLayout(context);
+        final TextView[] keyViews = new TextView[KEYS.length];
 
         for (int i = 0; i < KEYS.length; i++) {
             final String key = KEYS[i];
@@ -222,12 +219,6 @@ public final class PlusCodeDialog {
             keyBtn.setBackground(ThemeConfig.createInteractiveTileDrawable(
                     AdaptiveUi.dpf(context, 12f), fill, p.tilePressed, p.borderSubtle, p.accentPrimary));
 
-            GridLayout.LayoutParams klp = new GridLayout.LayoutParams();
-            klp.width = 0;
-            klp.height = AdaptiveUi.dp(context, KEY_HEIGHT_DP);
-            klp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1, 1f);
-            int keyMargin = AdaptiveUi.dp(context, KEY_MARGIN_DP);
-            klp.setMargins(keyMargin, keyMargin, keyMargin, keyMargin);
             keyBtn.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -247,12 +238,34 @@ public final class PlusCodeDialog {
                     }
                 }
             });
-            grid.addView(keyBtn, klp);
+            keyViews[i] = keyBtn;
         }
         root.addView(grid, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        AdaptiveUi.showBounded(dialog, root, DIALOG_WIDTH_DP, true);
+        AdaptiveUi.showBounded(dialog, root, DIALOG_WIDTH_DP, true,
+                new AdaptiveUi.OnBoundsChanged() {
+                    @Override
+                    public void onBounds(LayoutPolicy.LayoutSpec spec) {
+                        layoutKeys(context, grid, keyViews, spec.keypadColumns(DIALOG_WIDTH_DP));
+                    }
+                });
+    }
+
+    private static void layoutKeys(Context context, GridLayout grid, TextView[] keys,
+            int columns) {
+        if (grid.getChildCount() == keys.length && grid.getColumnCount() == columns) return;
+        grid.removeAllViews();
+        grid.setColumnCount(columns);
+        int keyMargin = AdaptiveUi.dp(context, KEY_MARGIN_DP);
+        for (TextView key : keys) {
+            GridLayout.LayoutParams klp = new GridLayout.LayoutParams();
+            klp.width = 0;
+            klp.height = AdaptiveUi.dp(context, KEY_HEIGHT_DP);
+            klp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1, 1f);
+            klp.setMargins(keyMargin, keyMargin, keyMargin, keyMargin);
+            grid.addView(key, klp);
+        }
     }
 
     private static int savedCityIndex(Context context) {

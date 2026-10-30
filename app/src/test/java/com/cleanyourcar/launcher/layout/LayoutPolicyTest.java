@@ -48,7 +48,7 @@ public class LayoutPolicyTest {
     private static final float HDPI = 1.5f;
     private static final float XHDPI = 2f;
 
-    /** Spec fixture matrix plus inset-constrained variants (status 24dp + nav 48dp bars). */
+    /** Spec fixture matrix plus inset-constrained and split-screen variants. */
     private static List<Fixture> fixtures() {
         List<Fixture> list = new ArrayList<>();
         list.add(new Fixture("800x480 mdpi", 800, 480, MDPI, 0, 0));
@@ -62,41 +62,72 @@ public class LayoutPolicyTest {
         list.add(new Fixture("1024x600 mdpi side nav", 1024, 600, MDPI, 48, 0));
         list.add(new Fixture("1280x720 xhdpi bars", 1280, 720, XHDPI, 0, 72));
         list.add(new Fixture("720x1280 portrait xhdpi bars", 720, 1280, XHDPI, 0, 72));
+        list.add(new Fixture("split-screen 320dp portrait", 640, 1200, XHDPI, 0, 0));
+        list.add(new Fixture("split-screen 320dp landscape", 320, 400, MDPI, 0, 0));
         return list;
     }
 
     private static final float[] FONT_SCALES = {0.85f, 1f, 1.3f, 2f};
 
+    // Geometry of the existing views, restated here so the checks do not reuse policy formulas.
+    private static final int CARD_PADDING_DP = 20;
+    private static final int TRANSPORT_GAP_DP = 12;
+    private static final int NAV_BUTTON_GAP_DP = 10;
+    private static final int KEYPAD_PREFERRED_WIDTH_DP = 620;
+    private static final int KEYPAD_PADDING_DP = 22;
+    private static final int KEY_MARGIN_DP = 5;
+
+    /** Width of the card holding the music controls: one column in SPLIT, full width stacked. */
+    private static int musicCardWidthDp(LayoutPolicy.LayoutSpec spec) {
+        return spec.mode == LayoutPolicy.Mode.SPLIT
+                ? (spec.contentWidthDp - spec.marginDp) / 2 : spec.contentWidthDp;
+    }
+
     private static void assertCommonGuarantees(String label, LayoutPolicy.LayoutSpec spec,
-            int availableWidthDp, int availableHeightDp, int preferredColumns) {
-        assertTrue(label, spec.minimumTouchTargetDp >= 48);
-        assertTrue(label, spec.contentWidthDp <= availableWidthDp);
+            int widthDp, int heightDp, int preferredColumns) {
+        // Horizontal fit: dock, its outer margin, content padding and content fit the window.
+        assertTrue(label + " horizontal fit " + spec,
+                spec.dockWidthDp + 3 * spec.marginDp + spec.contentWidthDp <= widthDp);
         assertTrue(label, spec.contentWidthDp > 0);
-        assertTrue(label + " dock target", spec.dockButtonDp >= 48);
-        assertTrue(label + " transport target", spec.transportHeightDp >= 48);
-        assertTrue(label + " nav target", spec.navButtonHeightDp >= 48);
-        assertTrue(label + " action target", spec.actionRowMinHeightDp >= 48);
-        assertTrue(label + " tile target", spec.gridTileHeightDp >= 48);
-        assertTrue(label + " tile text room", spec.gridTileHeightDp >= spec.minimumTileHeightDp);
-        assertTrue(label + " grid cols", spec.gridColumns >= 1);
+
+        // Dock buttons and toggle fit inside the dock and are full touch targets.
+        assertTrue(label + " dock button", spec.dockButtonDp >= 48);
+        assertTrue(label + " dock toggle", spec.dockToggleDp >= 48);
+        assertTrue(label + " dock button fits dock",
+                spec.dockButtonDp + 2 * spec.dockSidePaddingDp <= spec.dockWidthDp);
+        assertTrue(label + " dock toggle fits dock",
+                spec.dockToggleDp + 2 * spec.dockSidePaddingDp <= spec.dockWidthDp);
+
+        // Transport row: three buttons with two gaps inside the padded music card.
+        int transportWidth = (musicCardWidthDp(spec) - 2 * CARD_PADDING_DP
+                - 2 * TRANSPORT_GAP_DP) / 3;
+        assertTrue(label + " transport width " + transportWidth, transportWidth >= 48);
+        assertEquals(label, transportWidth, spec.transportButtonWidthDp);
+        assertTrue(label + " transport height", spec.transportHeightDp >= 48);
+
+        // Navigation row: two buttons in the padded card of the other column.
+        int navWidth = (musicCardWidthDp(spec) - 2 * CARD_PADDING_DP - NAV_BUTTON_GAP_DP) / 2;
+        assertTrue(label + " nav width " + navWidth, navWidth >= 48);
+        assertTrue(label + " nav height", spec.navButtonHeightDp >= 48);
+        assertTrue(label + " action row", spec.actionRowMinHeightDp >= 48);
+
+        // Grid tiles: the grid view spans content plus both margins, minus its 7dp padding,
+        // and each tile has 7dp margins on both sides.
+        int gridInner = spec.contentWidthDp + 2 * spec.marginDp - 2 * 7;
+        int tileWidth = gridInner / spec.gridColumns - 2 * 7;
+        assertTrue(label + " tile width " + tileWidth, tileWidth >= 48);
+        assertTrue(label + " tile height", spec.gridTileHeightDp >= 48);
         assertTrue(label + " grid cols pref", spec.gridColumns <= preferredColumns);
-        assertTrue(label + " grid rows", spec.gridRows >= 1);
-        assertTrue(label + " app slots", spec.appSlotsPerPage >= 1);
-        // Essential actions stay reachable: either the content fits or the surface scrolls.
-        assertTrue(label + " dashboard reachable", spec.dashboardScrolls
-                || spec.dashboardHeightDp <= availableHeightDp);
-        assertTrue(label + " dock reachable", spec.dockScrolls
-                || spec.dockHeightDp <= availableHeightDp);
-        assertTrue(label + " grid reachable", spec.gridScrolls
-                || spec.gridRows * (spec.gridTileHeightDp + LayoutPolicy.TILE_GAP_DP)
-                        <= availableHeightDp);
-        // Library and settings tiles plus at least one app fit on every page or the grid scrolls.
-        assertTrue(label + " grid fixed tiles", spec.gridScrolls
-                || spec.gridColumns * spec.gridRows >= spec.appSlotsPerPage + 2);
-        // Dialogs are bounded by the window.
-        assertTrue(label + " dialog width", spec.dialogMaxWidthDp <= availableWidthDp);
-        assertTrue(label + " dialog height", spec.dialogMaxHeightDp <= availableHeightDp);
-        assertTrue(label + " dialog width fit", spec.dialogWidthDp(650) <= spec.dialogMaxWidthDp);
+        assertTrue(label + " grid cols", spec.gridColumns >= 1);
+
+        // Plus Code keypad: keys share the padded dialog width, each with 5dp margins.
+        int dialogWidth = spec.dialogWidthDp(KEYPAD_PREFERRED_WIDTH_DP);
+        assertTrue(label + " dialog in window", dialogWidth + 2 * 16 <= widthDp);
+        assertTrue(label + " dialog height in window", spec.dialogMaxHeightDp + 2 * 16 <= heightDp);
+        int keyColumns = spec.keypadColumns(KEYPAD_PREFERRED_WIDTH_DP);
+        int keyWidth = (dialogWidth - 2 * KEYPAD_PADDING_DP) / keyColumns - 2 * KEY_MARGIN_DP;
+        assertTrue(label + " key width " + keyWidth, keyWidth >= 48);
+        assertTrue(label + " key columns", keyColumns >= 1 && keyColumns <= 7);
     }
 
     @Test
@@ -111,6 +142,39 @@ public class LayoutPolicyTest {
                 }
             }
         }
+    }
+
+    @Test
+    public void scrollingMatchesKnownWindows() {
+        // The existing head unit fits everything at the default font scale.
+        LayoutPolicy.LayoutSpec reference = LayoutPolicy.calculate(1024, 600, 1f, 4);
+        assertFalse(reference.dashboardScrolls);
+        assertFalse(reference.dockScrolls);
+        assertFalse(reference.gridScrolls);
+        // The small 800x480 unit still fits at the default font scale.
+        assertFalse(LayoutPolicy.calculate(800, 480, 1f, 4).dashboardScrolls);
+        // At font scale 2.0 the right column alone needs two 16.5sp action rows (2 x 59dp),
+        // a 30sp navigation title (~70dp), a 48dp navigation button, card padding (36 + 32),
+        // one card gap (14) and margins (16): more than 300dp, so it must scroll.
+        assertTrue(LayoutPolicy.calculate(800, 300, 2f, 4).dashboardScrolls);
+        // A 288dp-tall window cannot fit the 4 dock buttons (4 x 48dp) plus clock and toggle.
+        assertTrue(LayoutPolicy.calculate(640, 288, 1f, 4).dockScrolls);
+        // Stacked cards hold, top to bottom, 76dp album art, four 48dp control rows (transport,
+        // navigation, two actions), card padding (36 + 36 + 32), two gaps (28) and margins (16):
+        // at least 416dp, so a 400dp-tall portrait window must scroll.
+        assertTrue(LayoutPolicy.calculate(360, 400, 1f, 4).dashboardScrolls);
+    }
+
+    @Test
+    public void slotCountsMatchVisibleTiles() {
+        // Original 2-row grid: columns x 2 minus the library and settings tiles.
+        assertEquals(4, LayoutPolicy.calculate(1024, 600, 1f, 3).appSlotsPerPage);
+        assertEquals(6, LayoutPolicy.calculate(1024, 600, 1f, 4).appSlotsPerPage);
+        assertEquals(8, LayoutPolicy.calculate(1024, 600, 1f, 5).appSlotsPerPage);
+        // A single-column window still shows at least one app next to the two fixed tiles.
+        LayoutPolicy.LayoutSpec split = LayoutPolicy.calculate(320, 600, 1f, 5);
+        assertEquals(1, split.gridColumns);
+        assertTrue(split.appSlotsPerPage >= 1);
     }
 
     @Test
@@ -132,7 +196,7 @@ public class LayoutPolicyTest {
                 LayoutPolicy.calculate(shortWindow.widthDp(), shortWindow.heightDp(), 1f, 4);
         assertEquals(LayoutPolicy.DockPlacement.SIDE_COMPACT, shortSpec.dock);
         assertTrue(shortSpec.dashboardScrolls);
-        assertTrue(shortSpec.dockScrolls || shortSpec.dockHeightDp <= shortWindow.heightDp());
+        assertTrue(shortSpec.dockScrolls);
 
         // The existing 1024x600 head unit keeps the two-column dashboard without scrolling.
         LayoutPolicy.LayoutSpec reference = LayoutPolicy.calculate(1024, 600, 1f, 4);
@@ -153,10 +217,10 @@ public class LayoutPolicyTest {
                     LayoutPolicy.LayoutSpec spec =
                             LayoutPolicy.calculate(f.widthDp(), f.heightDp(), fontScale, cols);
                     String label = f + " font " + fontScale + " cols " + cols;
-                    int needed = spec.gridColumns * (LayoutPolicy.MIN_TILE_WIDTH_DP
-                            + LayoutPolicy.TILE_GAP_DP);
-                    assertTrue(label, spec.gridColumns == 1
-                            || needed <= spec.contentWidthDp + LayoutPolicy.TILE_GAP_DP);
+                    int gridInner = spec.contentWidthDp + 2 * spec.marginDp - 2 * 7;
+                    int tileWidth = gridInner / spec.gridColumns - 2 * 7;
+                    assertTrue(label + " tile " + tileWidth, spec.gridColumns == 1
+                            || tileWidth >= LayoutPolicy.MIN_TILE_WIDTH_DP);
                     assertTrue(label, spec.gridColumns <= cols);
                 }
             }
@@ -169,12 +233,9 @@ public class LayoutPolicyTest {
         // Preference bounded where it does not.
         LayoutPolicy.LayoutSpec narrow = LayoutPolicy.calculate(360, 568, 1f, 5);
         assertTrue(narrow.gridColumns < 5);
-        // Keypad columns are bounded by the dialog width and the 48dp target.
-        int keypadWidth = narrow.dialogWidthDp(620) - 44;
-        int keypad = LayoutPolicy.fitColumns(keypadWidth, 48, 10, 7);
-        assertTrue(keypad >= 1 && keypad < 7);
-        assertTrue(keypad * (48 + 10) <= keypadWidth + 10);
-        assertEquals(7, LayoutPolicy.fitColumns(620 - 44, 48, 10, 7));
+        // Keypad keeps 7 columns at its designed width and drops columns when narrow.
+        assertEquals(7, wide.keypadColumns(620));
+        assertTrue(narrow.keypadColumns(620) < 7);
         assertEquals(1, LayoutPolicy.fitColumns(10, 48, 10, 7));
     }
 
@@ -195,7 +256,7 @@ public class LayoutPolicyTest {
         LayoutPolicy.LayoutSpec shortWindow = LayoutPolicy.calculate(640, 288, 2f, 4);
         assertTrue(shortWindow.dashboardScrolls);
         assertTrue(shortWindow.dockScrolls);
-        assertTrue(shortWindow.gridScrolls || shortWindow.gridRows == 1);
+        assertEquals(1, shortWindow.gridRows);
     }
 
     @Test

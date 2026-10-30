@@ -103,6 +103,14 @@ final class SetupUi {
 
     /** Shows a window-bounded dialog whose whole content scrolls when it does not fit. */
     static void showDialog(Dialog dialog, View root) {
-        AdaptiveUi.showBounded(dialog, root, DIALOG_WIDTH_DP, true);
+        showDialog(dialog, root, true);
+    }
+
+    /**
+     * Shows a window-bounded dialog. Pass {@code scrollWhole = false} when {@code root} already
+     * ends in its own vertical scroller, so the header stays fixed and only that list scrolls.
+     */
+    static void showDialog(Dialog dialog, View root, boolean scrollWhole) {
+        AdaptiveUi.showBounded(dialog, root, DIALOG_WIDTH_DP, scrollWhole);
     }
 }

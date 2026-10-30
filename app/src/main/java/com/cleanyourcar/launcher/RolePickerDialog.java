@@ -90,7 +90,7 @@ final class RolePickerDialog {
         ScrollView scroll = new ScrollView(context);
         scroll.addView(list);
         root.addView(scroll);
-        SetupUi.showDialog(dialog, root);
+        SetupUi.showDialog(dialog, root, false);
     }
 
     private static void showStrategies(final Context context, final AppRepository.AppEntry app,

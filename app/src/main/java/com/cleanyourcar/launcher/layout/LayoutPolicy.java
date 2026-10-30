@@ -34,6 +34,13 @@ public final class LayoutPolicy {
     public static final int CARD_GAP_DP = 14;
     public static final int DIALOG_MARGIN_DP = 16;
     public static final int GRID_PADDING_DP = 7;
+    /** Inner padding of the dashboard cards (horizontal). */
+    public static final int CARD_PADDING_DP = 20;
+    public static final int TRANSPORT_GAP_DP = 12;
+    public static final int TRANSPORT_BUTTONS = 3;
+    public static final int KEYPAD_PADDING_DP = 22;
+    public static final int KEYPAD_KEY_MARGIN_DP = 5;
+    public static final int KEYPAD_MAX_COLUMNS = 7;
 
     private static final int REGULAR_MARGIN_DP = 14;
     private static final int COMPACT_MARGIN_DP = 8;
@@ -80,6 +87,8 @@ public final class LayoutPolicy {
 
         public final int navButtonHeightDp;
         public final int transportHeightDp;
+        /** Width of each media transport button in the music card. */
+        public final int transportButtonWidthDp;
         public final int actionRowMinHeightDp;
         public final int dashboardHeightDp;
         public final boolean dashboardScrolls;
@@ -99,6 +108,7 @@ public final class LayoutPolicy {
                 int dockSidePaddingDp, float dockClockSp,
                 int dockHeightDp, boolean dockScrolls, int availableContentWidthDp,
                 int contentWidthDp, int navButtonHeightDp, int transportHeightDp,
+                int transportButtonWidthDp,
                 int actionRowMinHeightDp, int dashboardHeightDp, boolean dashboardScrolls,
                 int gridColumns, int gridRows, int appSlotsPerPage, int gridTileHeightDp,
                 int minimumTileHeightDp, boolean gridScrolls, int dialogMaxWidthDp,
@@ -120,6 +130,7 @@ public final class LayoutPolicy {
             this.contentWidthDp = contentWidthDp;
             this.navButtonHeightDp = navButtonHeightDp;
             this.transportHeightDp = transportHeightDp;
+            this.transportButtonWidthDp = transportButtonWidthDp;
             this.actionRowMinHeightDp = actionRowMinHeightDp;
             this.dashboardHeightDp = dashboardHeightDp;
             this.dashboardScrolls = dashboardScrolls;
@@ -138,6 +149,16 @@ public final class LayoutPolicy {
             return Math.max(1, Math.min(preferredWidthDp, dialogMaxWidthDp));
         }
 
+        /**
+         * Plus Code keypad columns for a dialog of the preferred width: as many as keep every
+         * key at least {@link #MIN_TOUCH_TARGET_DP} wide, up to {@link #KEYPAD_MAX_COLUMNS}.
+         */
+        public int keypadColumns(int preferredDialogWidthDp) {
+            int inner = dialogWidthDp(preferredDialogWidthDp) - 2 * KEYPAD_PADDING_DP;
+            return fitColumns(inner, MIN_TOUCH_TARGET_DP + 2 * KEYPAD_KEY_MARGIN_DP, 0,
+                    KEYPAD_MAX_COLUMNS);
+        }
+
         public boolean isContentCapped() {
             return contentWidthDp < availableContentWidthDp;
         }
@@ -151,12 +172,15 @@ public final class LayoutPolicy {
                     && dockWidthDp == s.dockWidthDp && dockButtonDp == s.dockButtonDp
                     && dockButtonMarginDp == s.dockButtonMarginDp
                     && dockToggleDp == s.dockToggleDp
+                    && dockPaddingDp == s.dockPaddingDp
+                    && dockSidePaddingDp == s.dockSidePaddingDp
                     && Float.compare(dockClockSp, s.dockClockSp) == 0
                     && dockHeightDp == s.dockHeightDp && dockScrolls == s.dockScrolls
                     && availableContentWidthDp == s.availableContentWidthDp
                     && contentWidthDp == s.contentWidthDp
                     && navButtonHeightDp == s.navButtonHeightDp
                     && transportHeightDp == s.transportHeightDp
+                    && transportButtonWidthDp == s.transportButtonWidthDp
                     && actionRowMinHeightDp == s.actionRowMinHeightDp
                     && dashboardHeightDp == s.dashboardHeightDp
                     && dashboardScrolls == s.dashboardScrolls
@@ -174,6 +198,10 @@ public final class LayoutPolicy {
             int h = mode.hashCode();
             h = 31 * h + dock.hashCode();
             h = 31 * h + dockWidthDp;
+            h = 31 * h + dockPaddingDp;
+            h = 31 * h + dockSidePaddingDp;
+            h = 31 * h + Float.floatToIntBits(dockClockSp);
+            h = 31 * h + transportButtonWidthDp;
             h = 31 * h + dockHeightDp;
             h = 31 * h + contentWidthDp;
             h = 31 * h + dashboardHeightDp;
@@ -222,18 +250,28 @@ public final class LayoutPolicy {
         int dockButtonMargin = compact ? 4 : 6;
         int dockToggle = compact ? COMPACT_DOCK_TOGGLE_DP : REGULAR_DOCK_TOGGLE_DP;
         int dockPadding = compact ? 8 : 16;
-        int dockHeight = compact
+        int dockSidePadding = compact ? 6 : 8;
+        int dockMinWidth = compact ? COMPACT_DOCK_MIN_WIDTH_DP : REGULAR_DOCK_MIN_WIDTH_DP;
+        // Large fonts widen the clock, but never so far that the content loses its 48dp
+        // transport buttons; past that point the clock text is scaled down instead.
+        int minMusicCard = TRANSPORT_BUTTONS * MIN_TOUCH_TARGET_DP
+                + (TRANSPORT_BUTTONS - 1) * TRANSPORT_GAP_DP + 2 * CARD_PADDING_DP;
+        int dockMaxWidth = Math.max(dockMinWidth, w - 3 * margin - minMusicCard);
+        int naturalDockWidth = ceil(clockSp * fs * DIGIT_WIDTH_FACTOR * CLOCK_CHARS)
+                + 2 * dockSidePadding;
+        int dockWidth = Math.max(dockMinWidth, Math.min(naturalDockWidth, dockMaxWidth));
+        if (naturalDockWidth > dockWidth) {
+            clockSp = (dockWidth - 2 * dockSidePadding) / (fs * DIGIT_WIDTH_FACTOR * CLOCK_CHARS);
+        }
+        int dockHeight = compact || clockSp != regularClockSp
                 ? dockHeight(fs, clockSp, dockButton, dockButtonMargin, dockToggle, dockPadding)
                 : regularDockHeight;
-        int dockSidePadding = compact ? 6 : 8;
-        int dockWidth = Math.max(compact ? COMPACT_DOCK_MIN_WIDTH_DP : REGULAR_DOCK_MIN_WIDTH_DP,
-                ceil(clockSp * fs * DIGIT_WIDTH_FACTOR * CLOCK_CHARS) + 2 * dockSidePadding);
         boolean dockScrolls = dockHeight > h - 2 * margin;
 
         // Content width: what remains next to the dock, capped on ultrawide windows.
         int availableContent = Math.max(1, w - dockWidth - margin - 2 * margin);
         int contentWidth = Math.min(availableContent, MAX_CONTENT_WIDTH_DP);
-        int columnWidth = (contentWidth - CARD_GAP_DP) / 2;
+        int columnWidth = (contentWidth - margin) / 2;
         Mode mode = portrait || columnWidth < MIN_SPLIT_COLUMN_DP ? Mode.STACKED : Mode.SPLIT;
 
         // Dashboard: prefer the existing sizes; shrink to 48dp-safe sizes before scrolling.
@@ -253,9 +291,14 @@ public final class LayoutPolicy {
             dashHeight = dashboardHeight(mode, fs, margin, navButton, transport, actionRow);
         }
         boolean dashScrolls = dashHeight > h;
+        int musicCard = mode == Mode.SPLIT ? columnWidth : contentWidth;
+        int transportWidth = (musicCard - 2 * CARD_PADDING_DP
+                - (TRANSPORT_BUTTONS - 1) * TRANSPORT_GAP_DP) / TRANSPORT_BUTTONS;
 
         // App grid: columns bounded by fit, rows by height; library + settings tiles always shown.
-        int cols = fitColumns(contentWidth, MIN_TILE_WIDTH_DP, TILE_GAP_DP, pref);
+        // The grid view spans content plus both margins minus its padding; tiles carry margins.
+        int gridInner = contentWidth + 2 * margin - 2 * GRID_PADDING_DP;
+        int cols = fitColumns(gridInner, MIN_TILE_WIDTH_DP + 2 * GRID_PADDING_DP, 0, pref);
         int minTile = 32 + TILE_ICON_DP + 10 + line(16.5f, fs);
         int pageDots = 2 * line(14f, fs) + 4;
         int gridHeight = Math.max(1, h - GRID_PADDING_DP - 2 * GRID_PADDING_DP - pageDots);
@@ -273,7 +316,8 @@ public final class LayoutPolicy {
 
         return new LayoutSpec(mode, dock, margin, dockWidth, dockButton, dockButtonMargin,
                 dockToggle, dockPadding, dockSidePadding, clockSp, dockHeight, dockScrolls,
-                availableContent, contentWidth, navButton, transport, actionRow, dashHeight, dashScrolls, cols, rows, slots,
+                availableContent, contentWidth, navButton, transport, transportWidth, actionRow,
+                dashHeight, dashScrolls, cols, rows, slots,
                 tileHeight, minTile, gridScrolls, dialogMaxWidth, dialogMaxHeight);
     }
 
