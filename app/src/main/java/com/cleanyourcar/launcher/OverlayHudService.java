@@ -17,6 +17,10 @@ import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.cleanyourcar.launcher.integration.HeadUnitAdapter;
+import com.cleanyourcar.launcher.integration.IntegrationController;
+import com.cleanyourcar.launcher.integration.MediaState;
+
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -27,7 +31,7 @@ import java.util.Locale;
  * left-side menu, search bar, and back buttons are 100% unobstructed, and yields 100% of the
  * screen immediately when Reverse gear (R) is engaged.
  */
-public class OverlayHudService extends Service implements HeadUnitMediaBridge.Listener {
+public class OverlayHudService extends Service implements HeadUnitAdapter.Listener {
     public static final String ACTION_SHOW_EXPANDED = "com.cleanyourcar.launcher.OVERLAY_SHOW_EXPANDED";
     public static final String ACTION_SHOW_COLLAPSED = "com.cleanyourcar.launcher.OVERLAY_SHOW_COLLAPSED";
     public static final String ACTION_HIDE = "com.cleanyourcar.launcher.OVERLAY_HIDE";
@@ -55,6 +59,18 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
 
         public void onReverseGear(boolean reverse) {
             this.inReverse = reverse;
+        }
+
+        /**
+         * Applies an adapter reverse state. UNKNOWN keeps the last trusted state (fail-closed:
+         * it never clears an active reverse); HUD gating for unknown devices is decided elsewhere.
+         */
+        public void onReverseState(MediaState.ReverseState state) {
+            if (state == MediaState.ReverseState.ACTIVE) {
+                inReverse = true;
+            } else if (state == MediaState.ReverseState.INACTIVE) {
+                inReverse = false;
+            }
         }
 
         public boolean isActive() {
@@ -86,7 +102,7 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
     }
 
     private final StateMachine stateMachine = new StateMachine();
-    private final HeadUnitMediaBridge mediaBridge = new HeadUnitMediaBridge();
+    private IntegrationController integration;
 
     private WindowManager windowManager;
     private View rightPanelView;
@@ -103,7 +119,8 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
     public void onCreate() {
         super.onCreate();
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        mediaBridge.register(this, this);
+        integration = IntegrationController.create(this);
+        integration.start(this, this);
     }
 
     @Override
@@ -119,14 +136,14 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
         }
         ensureWindowsBuilt();
         syncWindowVisibility();
-        onMediaStateChanged(HeadUnitMediaBridge.getSharedState());
+        onMediaStateChanged(integration.mediaState());
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
         PlusCodeDialog.dismissActive();
-        mediaBridge.unregister(this);
+        integration.stop();
         removeAllWindows();
         super.onDestroy();
     }
@@ -314,7 +331,7 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
         btSegBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.setSource(OverlayHudService.this, HeadUnitMediaBridge.SOURCE_BT, OverlayHudService.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.SELECT_BLUETOOTH);
             }
         });
         btSegBtn.setOnLongClickListener(new View.OnLongClickListener() {
@@ -334,7 +351,7 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
         usbSegBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.setSource(OverlayHudService.this, HeadUnitMediaBridge.SOURCE_USB, OverlayHudService.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.SELECT_LOCAL);
             }
         });
         usbSegBtn.setOnLongClickListener(new View.OnLongClickListener() {
@@ -394,7 +411,7 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
         View prevBtn = createVectorTransportButton(VectorIcons.ICON_PREV, p.textPrimary, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.sendPrevious(OverlayHudService.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.PREVIOUS);
             }
         });
         playPauseBtn = new TextView(this);
@@ -405,13 +422,13 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
         playHolder.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.sendPlayPause(OverlayHudService.this, OverlayHudService.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.PLAY_PAUSE);
             }
         });
         View nextBtn = createVectorTransportButton(VectorIcons.ICON_NEXT, p.textPrimary, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.sendNext(OverlayHudService.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.NEXT);
             }
         });
 
@@ -497,7 +514,7 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
         TextView prev = createTransportButton(p, "⏮", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.sendPrevious(OverlayHudService.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.PREVIOUS);
             }
         });
         prev.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
@@ -505,7 +522,7 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
         pillPlayPauseBtn = createTransportButton(p, "⏯", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.sendPlayPause(OverlayHudService.this, OverlayHudService.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.PLAY_PAUSE);
             }
         });
         pillPlayPauseBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
@@ -513,7 +530,7 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
         TextView next = createTransportButton(p, "⏭", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.sendNext(OverlayHudService.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.NEXT);
             }
         });
         next.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
@@ -544,24 +561,35 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
         return pill;
     }
 
+    private void runMediaCommand(HeadUnitAdapter.MediaCommand command) {
+        MediaStateText.reportResult(this, integration.execute(command));
+    }
+
     @Override
-    public void onMediaStateChanged(HeadUnitMediaBridge.MediaState state) {
+    public void onMediaStateChanged(MediaState state) {
         if (state == null) return;
         ThemeConfig.Palette p = ThemeConfig.getActivePalette(this);
-        if (songTitleText != null) songTitleText.setText(state.title);
-        if (songSubText != null) songSubText.setText(state.subtitle);
+        if (songTitleText != null) {
+            songTitleText.setText(MediaStateText.title(state, I18n.tr(this, I18n.KEY_MUSIC_READY)));
+        }
+        if (songSubText != null) {
+            songSubText.setText(MediaStateText.subtitle(state, I18n.tr(this, I18n.KEY_BT_MUSIC),
+                    I18n.tr(this, I18n.KEY_USB_MUSIC)));
+        }
         if (overlayPlayIconView != null) {
             overlayPlayIconView.setBackground(VectorIcons.createDrawable(
-                    state.playing ? VectorIcons.ICON_PAUSE : VectorIcons.ICON_PLAY,
+                    state.playback == MediaState.Playback.PLAYING
+                            ? VectorIcons.ICON_PAUSE : VectorIcons.ICON_PLAY,
                     p.textPrimary,
                     26));
         }
 
         if (btSegBtn != null && usbSegBtn != null) {
-            boolean isUsb = (state.activeSource == HeadUnitMediaBridge.SOURCE_USB);
-            btSegBtn.setTextColor(isUsb ? p.textSecondary : p.textPrimary);
-            btSegBtn.setBackground(isUsb ? null : ThemeConfig.createGlassCardDrawable(
-                    999f, 0x66FFFFFF, p.accentPrimary, p.borderLuminous, 1));
+            boolean isBt = state.source == MediaState.Source.BLUETOOTH;
+            boolean isUsb = state.source == MediaState.Source.LOCAL;
+            btSegBtn.setTextColor(isBt ? p.textPrimary : p.textSecondary);
+            btSegBtn.setBackground(isBt ? ThemeConfig.createGlassCardDrawable(
+                    999f, 0x66FFFFFF, p.accentPrimary, p.borderLuminous, 1) : null);
             usbSegBtn.setTextColor(isUsb ? p.textPrimary : p.textSecondary);
             usbSegBtn.setBackground(isUsb ? ThemeConfig.createGlassCardDrawable(
                     999f, 0x66FFFFFF, p.accentDanger, p.borderLuminous, 1) : null);
@@ -569,12 +597,16 @@ public class OverlayHudService extends Service implements HeadUnitMediaBridge.Li
     }
 
     @Override
-    public void onReverseGearChanged(boolean inReverse) {
-        if (inReverse) {
+    public void onReverseStateChanged(MediaState.ReverseState state) {
+        if (state == MediaState.ReverseState.ACTIVE) {
             PlusCodeDialog.dismissActive();
         }
-        stateMachine.onReverseGear(inReverse);
+        stateMachine.onReverseState(state);
         syncWindowVisibility();
     }
-}
 
+    @Override
+    public void onHealthChanged(HeadUnitAdapter.Health health, String reason) {
+        MediaStateText.reportHealth(this, health, reason);
+    }
+}

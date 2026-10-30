@@ -12,6 +12,10 @@ import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.cleanyourcar.launcher.integration.HeadUnitAdapter;
+import com.cleanyourcar.launcher.integration.IntegrationController;
+import com.cleanyourcar.launcher.integration.MediaState;
+
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -21,9 +25,9 @@ import java.util.Locale;
  * Pure black (#000000) anti-glare display with large thin time, Vietnamese date,
  * and current song title; single tap anywhere returns to CleanYourCar.
  */
-public class ClockActivity extends Activity implements HeadUnitMediaBridge.Listener {
+public class ClockActivity extends Activity implements HeadUnitAdapter.Listener {
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final HeadUnitMediaBridge mediaBridge = new HeadUnitMediaBridge();
+    private IntegrationController integration;
     private TextView clockText;
     private TextView subText;
 
@@ -81,14 +85,17 @@ public class ClockActivity extends Activity implements HeadUnitMediaBridge.Liste
     @Override
     protected void onResume() {
         super.onResume();
-        mediaBridge.register(this, this);
+        integration = IntegrationController.create(this);
+        integration.start(this, this);
         handler.post(tickRunnable);
     }
 
     @Override
     protected void onPause() {
         handler.removeCallbacks(tickRunnable);
-        mediaBridge.unregister(this);
+        if (integration != null) {
+            integration.stop();
+        }
         super.onPause();
     }
 
@@ -96,19 +103,24 @@ public class ClockActivity extends Activity implements HeadUnitMediaBridge.Liste
         Date now = new Date();
         SimpleDateFormat tf = new SimpleDateFormat("HH:mm", Locale.getDefault());
         clockText.setText(tf.format(now));
-        HeadUnitMediaBridge.MediaState st = HeadUnitMediaBridge.getSharedState();
-        subText.setText(VietnameseDateFormatter.formatToday(now) + "  •  🎵 " + st.title);
+        MediaState st = integration != null ? integration.mediaState() : MediaState.unknown();
+        subText.setText(VietnameseDateFormatter.formatToday(now) + "  •  🎵 "
+                + MediaStateText.title(st, I18n.tr(this, I18n.KEY_MUSIC_READY)));
     }
 
     @Override
-    public void onMediaStateChanged(HeadUnitMediaBridge.MediaState state) {
+    public void onMediaStateChanged(MediaState state) {
         updateClock();
     }
 
     @Override
-    public void onReverseGearChanged(boolean inReverse) {
-        if (inReverse) {
+    public void onReverseStateChanged(MediaState.ReverseState state) {
+        if (state == MediaState.ReverseState.ACTIVE) {
             finish();
         }
+    }
+
+    @Override
+    public void onHealthChanged(HeadUnitAdapter.Health health, String reason) {
     }
 }

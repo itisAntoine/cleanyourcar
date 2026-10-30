@@ -19,6 +19,10 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.cleanyourcar.launcher.integration.HeadUnitAdapter;
+import com.cleanyourcar.launcher.integration.IntegrationController;
+import com.cleanyourcar.launcher.integration.MediaState;
+
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -28,11 +32,11 @@ import java.util.Locale;
  * CleanYourCar Home Activity (1024x600 @ 160dpi target).
  * Pure Android Framework SDK (zero AppCompat/Material dependencies, zero INTERNET permission).
  */
-public class MainActivity extends Activity implements HeadUnitMediaBridge.Listener {
+public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
     private static final int PAGE_DASHBOARD = 0;
     private static final int PAGE_APP_GRID = 1;
 
-    private final HeadUnitMediaBridge mediaBridge = new HeadUnitMediaBridge();
+    private IntegrationController integration;
     private final AppRepository appRepository = new AppRepository();
     private final Handler clockHandler = new Handler(Looper.getMainLooper());
 
@@ -86,9 +90,9 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
     protected void onResume() {
         super.onResume();
         CarIntentRouter.stopOverlayService(this);
-        mediaBridge.register(this, this);
+        integration = IntegrationController.create(this);
+        integration.start(this, this);
         clockHandler.post(clockTicker);
-        onMediaStateChanged(HeadUnitMediaBridge.getSharedState());
         if (activePage == PAGE_APP_GRID) {
             populateAppGrid();
         }
@@ -97,7 +101,9 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
     @Override
     protected void onPause() {
         clockHandler.removeCallbacks(clockTicker);
-        mediaBridge.unregister(this);
+        if (integration != null) {
+            integration.stop();
+        }
         super.onPause();
     }
 
@@ -196,7 +202,7 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
 
         setContentView(rootLayout);
         updateClockAndDate();
-        onMediaStateChanged(HeadUnitMediaBridge.getSharedState());
+        onMediaStateChanged(integration != null ? integration.mediaState() : MediaState.unknown());
         showPage(activePage);
     }
 
@@ -259,8 +265,7 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
                 if (activePage != PAGE_DASHBOARD) {
                     showPage(PAGE_DASHBOARD);
                 } else {
-                    int activeSrc = HeadUnitMediaBridge.getSharedState().activeSource;
-                    CarIntentRouter.launchMusicSourceApp(MainActivity.this, activeSrc);
+                    CarIntentRouter.launchMusicSourceApp(MainActivity.this, musicLaunchSource());
                 }
             }
         }));
@@ -385,7 +390,7 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
         btSegBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.setSource(MainActivity.this, HeadUnitMediaBridge.SOURCE_BT, MainActivity.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.SELECT_BLUETOOTH);
             }
         });
         btSegBtn.setOnLongClickListener(new View.OnLongClickListener() {
@@ -405,7 +410,7 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
         usbSegBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.setSource(MainActivity.this, HeadUnitMediaBridge.SOURCE_USB, MainActivity.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.SELECT_LOCAL);
             }
         });
         usbSegBtn.setOnLongClickListener(new View.OnLongClickListener() {
@@ -437,8 +442,7 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
         albumArt.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                int src = HeadUnitMediaBridge.getSharedState().activeSource;
-                CarIntentRouter.launchMusicSourceApp(MainActivity.this, src);
+                CarIntentRouter.launchMusicSourceApp(MainActivity.this, musicLaunchSource());
             }
         });
         midRow.addView(albumArt, alp);
@@ -477,20 +481,20 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
         View prevBtn = createLiquidTransportButton(p, VectorIcons.ICON_PREV, false, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.sendPrevious(MainActivity.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.PREVIOUS);
             }
         });
         playPauseBtn = new TextView(this);
         FrameLayout playWrap = createLiquidPlayButton(p, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.sendPlayPause(MainActivity.this, MainActivity.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.PLAY_PAUSE);
             }
         });
         View nextBtn = createLiquidTransportButton(p, VectorIcons.ICON_NEXT, false, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mediaBridge.sendNext(MainActivity.this);
+                runMediaCommand(HeadUnitAdapter.MediaCommand.NEXT);
             }
         });
 
@@ -861,26 +865,47 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
         }
     }
 
+    private void runMediaCommand(HeadUnitAdapter.MediaCommand command) {
+        HeadUnitAdapter.CommandResult result = integration != null
+                ? integration.execute(command)
+                : HeadUnitAdapter.CommandResult.unavailable(
+                        HeadUnitAdapter.CommandResult.REASON_NOT_STARTED);
+        MediaStateText.reportResult(this, result);
+    }
+
+    private int musicLaunchSource() {
+        return HeadUnitMediaBridge.toLegacySource(integration != null
+                ? integration.musicLaunchSource() : MediaState.Source.BLUETOOTH);
+    }
+
     @Override
-    public void onMediaStateChanged(HeadUnitMediaBridge.MediaState state) {
+    public void onMediaStateChanged(MediaState state) {
         if (state == null) return;
         ThemeConfig.Palette p = ThemeConfig.getActivePalette(this);
-        if (songTitleText != null) songTitleText.setText(state.title);
-        if (songSubText != null) songSubText.setText(state.subtitle);
+        if (songTitleText != null) {
+            songTitleText.setText(MediaStateText.title(state, I18n.tr(this, I18n.KEY_MUSIC_READY)));
+        }
+        if (songSubText != null) {
+            songSubText.setText(MediaStateText.subtitle(state, I18n.tr(this, I18n.KEY_BT_MUSIC),
+                    I18n.tr(this, I18n.KEY_USB_MUSIC)));
+        }
         if (playIconView != null) {
             playIconView.setBackground(VectorIcons.createDrawable(
-                    state.playing ? VectorIcons.ICON_PAUSE : VectorIcons.ICON_PLAY,
+                    state.playback == MediaState.Playback.PLAYING
+                            ? VectorIcons.ICON_PAUSE : VectorIcons.ICON_PLAY,
                     p.textPrimary,
                     28));
         }
         if (dockStatusText != null) {
-            dockStatusText.setText(state.btConnected ? "Bluetooth" : "Ngoại tuyến");
+            dockStatusText.setText(MediaStateText.connection(state, "Bluetooth",
+                    I18n.tr(this, I18n.KEY_OFFLINE_STATUS)));
         }
         if (btSegBtn != null && usbSegBtn != null) {
-            boolean isUsb = (state.activeSource == HeadUnitMediaBridge.SOURCE_USB);
-            btSegBtn.setTextColor(isUsb ? p.textSecondary : p.textPrimary);
-            btSegBtn.setBackground(isUsb ? null : ThemeConfig.createGlassCardDrawable(
-                    999f, 0x66FFFFFF, p.accentPrimary, p.borderLuminous, 1));
+            boolean isBt = state.source == MediaState.Source.BLUETOOTH;
+            boolean isUsb = state.source == MediaState.Source.LOCAL;
+            btSegBtn.setTextColor(isBt ? p.textPrimary : p.textSecondary);
+            btSegBtn.setBackground(isBt ? ThemeConfig.createGlassCardDrawable(
+                    999f, 0x66FFFFFF, p.accentPrimary, p.borderLuminous, 1) : null);
             usbSegBtn.setTextColor(isUsb ? p.textPrimary : p.textSecondary);
             usbSegBtn.setBackground(isUsb ? ThemeConfig.createGlassCardDrawable(
                     999f, 0x66FFFFFF, p.accentDanger, p.borderLuminous, 1) : null);
@@ -888,9 +913,14 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
     }
 
     @Override
-    public void onReverseGearChanged(boolean inReverse) {
-        if (inReverse) {
+    public void onReverseStateChanged(MediaState.ReverseState state) {
+        if (state == MediaState.ReverseState.ACTIVE) {
             PlusCodeDialog.dismissActive();
         }
+    }
+
+    @Override
+    public void onHealthChanged(HeadUnitAdapter.Health health, String reason) {
+        MediaStateText.reportHealth(this, health, reason);
     }
 }
