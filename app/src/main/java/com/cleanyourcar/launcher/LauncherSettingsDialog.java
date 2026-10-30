@@ -3,15 +3,15 @@ package com.cleanyourcar.launcher;
 import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
-import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
+import com.cleanyourcar.launcher.layout.LayoutPolicy;
 
 /**
  * Multi-user / multi-preference customization dialog with inline expandable dropdowns
@@ -23,6 +23,7 @@ import android.widget.TextView;
  * - App Grid Columns (3, 4, or 5 columns)
  */
 public final class LauncherSettingsDialog {
+    private static final int DIALOG_WIDTH_DP = 650;
     public interface OnSettingsChangedListener {
         void onSettingsChanged();
     }
@@ -49,9 +50,9 @@ public final class LauncherSettingsDialog {
 
                 LinearLayout root = new LinearLayout(context);
                 root.setOrientation(LinearLayout.VERTICAL);
-                root.setPadding(22, 18, 22, 18);
+                root.setPadding(AdaptiveUi.dp(context, 22), AdaptiveUi.dp(context, 18), AdaptiveUi.dp(context, 22), AdaptiveUi.dp(context, 18));
                 root.setBackground(ThemeConfig.createGlassCardDrawable(
-                        24f, p.dockTop, p.dockBottom, p.borderLuminous, 2));
+                        AdaptiveUi.dpf(context, 24f), p.dockTop, p.dockBottom, p.borderLuminous, 2));
 
                 // Header
                 LinearLayout header = new LinearLayout(context);
@@ -70,7 +71,10 @@ public final class LauncherSettingsDialog {
                 closeBtn.setTextColor(p.textPrimary);
                 closeBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
                 closeBtn.setTypeface(Typeface.DEFAULT_BOLD);
-                closeBtn.setPadding(16, 8, 16, 8);
+                closeBtn.setPadding(AdaptiveUi.dp(context, 16), AdaptiveUi.dp(context, 8), AdaptiveUi.dp(context, 16), AdaptiveUi.dp(context, 8));
+closeBtn.setMinHeight(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+                closeBtn.setMinWidth(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+                closeBtn.setGravity(Gravity.CENTER);
                 closeBtn.setBackground(ThemeConfig.createInteractiveTileDrawable(
                         999f, p.tileDefault, p.accentDanger, p.borderSubtle, p.accentDanger));
                 closeBtn.setOnClickListener(new View.OnClickListener() {
@@ -85,7 +89,7 @@ public final class LauncherSettingsDialog {
                 ScrollView scroll = new ScrollView(context);
                 LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                slp.topMargin = 10;
+                slp.topMargin = AdaptiveUi.dp(context, 10);
 
                 LinearLayout list = new LinearLayout(context);
                 list.setOrientation(LinearLayout.VERTICAL);
@@ -258,29 +262,23 @@ public final class LauncherSettingsDialog {
                             }
                         }));
 
-                scroll.addView(list);
-                root.addView(scroll, slp);
-
                 TextView hint = new TextView(context);
                 hint.setText("Chạm vào mục bất kỳ để xổ danh sách chọn nhanh — giao diện tự cập nhật trực tiếp phía sau.");
                 hint.setTextColor(p.textSecondary);
                 hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
                 LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                hlp.topMargin = 10;
-                root.addView(hint, hlp);
+                hlp.topMargin = AdaptiveUi.dp(context, 10);
+                list.addView(hint, hlp);
+                scroll.addView(list);
+                root.addView(scroll, slp);
 
                 outerHost.addView(root);
             }
         };
 
         renderRef[0].run();
-        dialog.setContentView(outerHost);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0x00000000));
-            dialog.getWindow().setLayout(650, WindowManager.LayoutParams.WRAP_CONTENT);
-        }
-        dialog.show();
+        AdaptiveUi.showBounded(dialog, outerHost, DIALOG_WIDTH_DP, false);
     }
 
     private interface OnOptionSelected {
@@ -304,16 +302,17 @@ public final class LauncherSettingsDialog {
         LinearLayout container = new LinearLayout(context);
         container.setOrientation(LinearLayout.VERTICAL);
         container.setBackground(ThemeConfig.createGlassCardDrawable(
-                16f, p.tileDefault, 0x10FFFFFF, isExpanded ? p.accentPrimary : p.borderSubtle, isExpanded ? 2 : 1));
+                AdaptiveUi.dpf(context, 16f), p.tileDefault, 0x10FFFFFF, isExpanded ? p.accentPrimary : p.borderSubtle, isExpanded ? 2 : 1));
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        clp.topMargin = 8;
+        clp.topMargin = AdaptiveUi.dp(context, 8);
 
         // Header trigger row
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        headerRow.setPadding(16, 12, 16, 12);
+        headerRow.setMinimumHeight(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+        headerRow.setPadding(AdaptiveUi.dp(context, 16), AdaptiveUi.dp(context, 12), AdaptiveUi.dp(context, 16), AdaptiveUi.dp(context, 12));
         headerRow.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -342,7 +341,7 @@ public final class LauncherSettingsDialog {
         if (isExpanded) {
             LinearLayout dropdownMenu = new LinearLayout(context);
             dropdownMenu.setOrientation(LinearLayout.VERTICAL);
-            dropdownMenu.setPadding(12, 4, 12, 12);
+            dropdownMenu.setPadding(AdaptiveUi.dp(context, 12), AdaptiveUi.dp(context, 4), AdaptiveUi.dp(context, 12), AdaptiveUi.dp(context, 12));
 
             for (int i = 0; i < options.length; i++) {
                 final int optionIdx = i;
@@ -353,15 +352,17 @@ public final class LauncherSettingsDialog {
                 optView.setTextColor(p.textPrimary);
                 optView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
                 optView.setTypeface(isSelected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-                optView.setPadding(14, 10, 14, 10);
+                optView.setMinHeight(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+                optView.setGravity(Gravity.CENTER_VERTICAL);
+                optView.setPadding(AdaptiveUi.dp(context, 14), AdaptiveUi.dp(context, 10), AdaptiveUi.dp(context, 14), AdaptiveUi.dp(context, 10));
 
                 int optFill = isSelected ? p.accentPrimary : p.wellBackground;
                 optView.setBackground(ThemeConfig.createInteractiveTileDrawable(
-                        11f, optFill, p.tilePressed, isSelected ? p.borderLuminous : p.borderSubtle, p.accentPrimary));
+                        AdaptiveUi.dpf(context, 11f), optFill, p.tilePressed, isSelected ? p.borderLuminous : p.borderSubtle, p.accentPrimary));
 
                 LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                olp.topMargin = 6;
+                olp.topMargin = AdaptiveUi.dp(context, 6);
                 optView.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {

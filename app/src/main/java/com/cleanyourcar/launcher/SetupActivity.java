@@ -89,6 +89,7 @@ public class SetupActivity extends Activity {
         setupPrefs(this).edit().putBoolean(KEY_SETUP_SEEN, true).apply();
 
         ScrollView scroll = new ScrollView(this);
+        scroll.setFitsSystemWindows(true);
         content = SetupUi.card(this, ThemeConfig.getActivePalette(this));
         scroll.addView(content);
         setContentView(scroll);

@@ -3,17 +3,17 @@ package com.cleanyourcar.launcher;
 import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
-import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
+import com.cleanyourcar.launcher.layout.LayoutPolicy;
 
 import java.util.List;
 
@@ -22,6 +22,8 @@ import java.util.List;
  * (matching cleanyourtv's App Library & Reorder philosophy).
  */
 public final class AppLibraryDialog {
+    private static final int DIALOG_WIDTH_DP = 660;
+    private static final int LIST_HEIGHT_DP = 390;
     public interface OnChangedListener {
         void onAppsUpdated();
     }
@@ -36,9 +38,9 @@ public final class AppLibraryDialog {
 
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(20, 16, 20, 16);
+        root.setPadding(AdaptiveUi.dp(context, 20), AdaptiveUi.dp(context, 16), AdaptiveUi.dp(context, 20), AdaptiveUi.dp(context, 16));
         root.setBackground(ThemeConfig.createGlassCardDrawable(
-                22f, 0xF210172A, 0xF2090D18, p.borderLuminous, 2));
+                AdaptiveUi.dpf(context, 22f), 0xF210172A, 0xF2090D18, p.borderLuminous, 2));
 
         LinearLayout header = new LinearLayout(context);
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -56,9 +58,12 @@ public final class AppLibraryDialog {
         closeBtn.setTextColor(p.textPrimary);
         closeBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         closeBtn.setTypeface(Typeface.DEFAULT_BOLD);
-        closeBtn.setPadding(16, 8, 16, 8);
+        closeBtn.setPadding(AdaptiveUi.dp(context, 16), AdaptiveUi.dp(context, 8), AdaptiveUi.dp(context, 16), AdaptiveUi.dp(context, 8));
+closeBtn.setMinHeight(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+        closeBtn.setMinWidth(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+        closeBtn.setGravity(Gravity.CENTER);
         closeBtn.setBackground(ThemeConfig.createInteractiveTileDrawable(
-                10f, p.tileDefault, p.accentDanger, p.borderSubtle, p.accentDanger));
+                AdaptiveUi.dpf(context, 10f), p.tileDefault, p.accentDanger, p.borderSubtle, p.accentDanger));
         closeBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -68,15 +73,20 @@ public final class AppLibraryDialog {
         header.addView(closeBtn);
         root.addView(header);
 
+        // The list keeps its designed 390dp height but shrinks with the window-bounded dialog.
+        int listHeight = AdaptiveUi.dp(context, LIST_HEIGHT_DP);
+        AdaptiveUi.MaxHeightFrame listFrame = new AdaptiveUi.MaxHeightFrame(context, listHeight);
+        listFrame.setMinimumHeight(listHeight);
         ScrollView scroll = new ScrollView(context);
         LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 390);
-        scrollLp.topMargin = 12;
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        scrollLp.topMargin = AdaptiveUi.dp(context, 12);
 
         final LinearLayout listContainer = new LinearLayout(context);
         listContainer.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(listContainer);
-        root.addView(scroll, scrollLp);
+        listFrame.addView(scroll);
+        root.addView(listFrame, scrollLp);
 
         final Runnable populate = new Runnable() {
             @Override
@@ -88,18 +98,18 @@ public final class AppLibraryDialog {
                     LinearLayout row = new LinearLayout(context);
                     row.setOrientation(LinearLayout.HORIZONTAL);
                     row.setGravity(Gravity.CENTER_VERTICAL);
-                    row.setPadding(12, 8, 12, 8);
+                    row.setPadding(AdaptiveUi.dp(context, 12), AdaptiveUi.dp(context, 8), AdaptiveUi.dp(context, 12), AdaptiveUi.dp(context, 8));
                     row.setBackground(ThemeConfig.createGlassCardDrawable(
-                            12f, p.tileDefault, 0x10FFFFFF, p.borderSubtle, 1));
+                            AdaptiveUi.dpf(context, 12f), p.tileDefault, 0x10FFFFFF, p.borderSubtle, 1));
                     LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                    rlp.bottomMargin = 8;
+                    rlp.bottomMargin = AdaptiveUi.dp(context, 8);
 
                     if (entry.icon != null) {
                         ImageView iconView = new ImageView(context);
                         iconView.setImageDrawable(entry.icon);
-                        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(40, 40);
-                        ilp.rightMargin = 12;
+                        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(AdaptiveUi.dp(context, 40), AdaptiveUi.dp(context, 40));
+                        ilp.rightMargin = AdaptiveUi.dp(context, 12);
                         row.addView(iconView, ilp);
                     }
 
@@ -167,12 +177,7 @@ public final class AppLibraryDialog {
         };
         populate.run();
 
-        dialog.setContentView(root);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0x00000000));
-            dialog.getWindow().setLayout(660, WindowManager.LayoutParams.WRAP_CONTENT);
-        }
-        dialog.show();
+        AdaptiveUi.showBounded(dialog, root, DIALOG_WIDTH_DP, false);
     }
 
     private static TextView createActionChip(Context context, ThemeConfig.Palette p, String text, int fill) {
@@ -181,12 +186,15 @@ public final class AppLibraryDialog {
         btn.setTextColor(p.textPrimary);
         btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         btn.setTypeface(Typeface.DEFAULT_BOLD);
-        btn.setPadding(12, 8, 12, 8);
+        btn.setMinHeight(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+        btn.setMinWidth(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+        btn.setGravity(Gravity.CENTER);
+        btn.setPadding(AdaptiveUi.dp(context, 12), AdaptiveUi.dp(context, 8), AdaptiveUi.dp(context, 12), AdaptiveUi.dp(context, 8));
         btn.setBackground(ThemeConfig.createInteractiveTileDrawable(
-                8f, fill, p.tilePressed, p.borderSubtle, p.accentPrimary));
+                AdaptiveUi.dpf(context, 8f), fill, p.tilePressed, p.borderSubtle, p.accentPrimary));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.leftMargin = 6;
+        lp.leftMargin = AdaptiveUi.dp(context, 6);
         btn.setLayoutParams(lp);
         return btn;
     }

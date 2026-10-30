@@ -54,8 +54,7 @@
             android:stateNotNeeded="true"
             android:excludeFromRecents="true"
             android:clearTaskOnLaunch="true"
-            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|uiMode"
-            android:screenOrientation="landscape">
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
@@ -73,7 +72,6 @@
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|uiMode"
-            android:screenOrientation="landscape"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
         <activity

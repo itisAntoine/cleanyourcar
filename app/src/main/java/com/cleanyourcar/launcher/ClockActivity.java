@@ -48,6 +48,7 @@ public class ClockActivity extends Activity implements HeadUnitAdapter.Listener 
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER);
         root.setBackgroundColor(0xFF000000);
+        root.setFitsSystemWindows(true);
         root.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -75,7 +76,7 @@ public class ClockActivity extends Activity implements HeadUnitAdapter.Listener 
         hint.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        hlp.topMargin = 24;
+        hlp.topMargin = dp(24);
         root.addView(hint, hlp);
 
         setContentView(root);
@@ -122,5 +123,9 @@ public class ClockActivity extends Activity implements HeadUnitAdapter.Listener 
 
     @Override
     public void onHealthChanged(HeadUnitAdapter.Health health, String reason) {
+    }
+
+    private int dp(float value) {
+        return AdaptiveUi.dp(this, value);
     }
 }

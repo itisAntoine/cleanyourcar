@@ -3,12 +3,10 @@ package com.cleanyourcar.launcher;
 import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
-import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -18,17 +16,19 @@ final class SetupUi {
     private SetupUi() {
     }
 
+    /** Preferred setup dialog width; bounded by the window in {@link #showDialog}. */
+    static final int DIALOG_WIDTH_DP = 650;
+
     static int dp(Context context, int value) {
-        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value,
-                context.getResources().getDisplayMetrics()));
+        return AdaptiveUi.dp(context, value);
     }
 
     static LinearLayout card(Context context, ThemeConfig.Palette p) {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(22, 18, 22, 18);
+        card.setPadding(dp(context, 22), dp(context, 18), dp(context, 22), dp(context, 18));
         card.setBackground(ThemeConfig.createGlassCardDrawable(
-                24f, p.dockTop, p.dockBottom, p.borderLuminous, 2));
+                AdaptiveUi.dpf(context, 24f), p.dockTop, p.dockBottom, p.borderLuminous, 2));
         return card;
     }
 
@@ -47,7 +47,7 @@ final class SetupUi {
         view.setTextColor(p.textPrimary);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16.5f);
         view.setTypeface(Typeface.DEFAULT_BOLD);
-        view.setPadding(0, 18, 0, 4);
+        view.setPadding(0, dp(context, 18), 0, dp(context, 4));
         return view;
     }
 
@@ -56,7 +56,7 @@ final class SetupUi {
         view.setText(text);
         view.setTextColor(p.textSecondary);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        view.setPadding(0, 4, 0, 4);
+        view.setPadding(0, dp(context, 4), 0, dp(context, 4));
         return view;
     }
 
@@ -70,8 +70,9 @@ final class SetupUi {
         view.setTypeface(selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
         view.setGravity(Gravity.CENTER_VERTICAL);
         view.setMinHeight(dp(context, 48));
-        view.setPadding(16, 8, 16, 8);
-        view.setBackground(ThemeConfig.createInteractiveTileDrawable(11f,
+        view.setPadding(dp(context, 16), dp(context, 8), dp(context, 16), dp(context, 8));
+        view.setBackground(ThemeConfig.createInteractiveTileDrawable(
+                AdaptiveUi.dpf(context, 11f),
                 selected ? p.accentPrimary : p.wellBackground, p.tilePressed,
                 selected ? p.borderLuminous : p.borderSubtle, p.accentPrimary));
         view.setOnClickListener(onClick);
@@ -81,7 +82,7 @@ final class SetupUi {
     static void addRow(LinearLayout parent, View child) {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = 6;
+        lp.topMargin = dp(parent.getContext(), 6);
         parent.addView(child, lp);
     }
 
@@ -100,12 +101,8 @@ final class SetupUi {
         };
     }
 
+    /** Shows a window-bounded dialog whose whole content scrolls when it does not fit. */
     static void showDialog(Dialog dialog, View root) {
-        dialog.setContentView(root);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0x00000000));
-            dialog.getWindow().setLayout(650, WindowManager.LayoutParams.WRAP_CONTENT);
-        }
-        dialog.show();
+        AdaptiveUi.showBounded(dialog, root, DIALOG_WIDTH_DP, true);
     }
 }

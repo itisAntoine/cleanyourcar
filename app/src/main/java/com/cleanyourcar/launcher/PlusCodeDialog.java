@@ -3,7 +3,6 @@ package com.cleanyourcar.launcher;
 import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -14,6 +13,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.cleanyourcar.launcher.layout.LayoutPolicy;
+
 import com.cleanyourcar.launcher.config.ConfigurationStore;
 import com.cleanyourcar.launcher.config.NavigationReference;
 
@@ -23,6 +24,11 @@ import com.cleanyourcar.launcher.config.NavigationReference;
  * location or the explicitly chosen city preset; full codes need no reference.
  */
 public final class PlusCodeDialog {
+    private static final int DIALOG_WIDTH_DP = 620;
+    private static final int DIALOG_PADDING_DP = 22;
+    private static final int KEY_HEIGHT_DP = 58;
+    private static final int KEY_MARGIN_DP = 5;
+    private static final int MAX_KEY_COLUMNS = 7;
     private static final String[] KEYS = new String[] {
             "2", "3", "4", "5", "6", "7", "8",
             "9", "C", "F", "G", "H", "J", "M",
@@ -68,9 +74,10 @@ public final class PlusCodeDialog {
 
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(22, 18, 22, 18);
+        root.setPadding(AdaptiveUi.dp(context, DIALOG_PADDING_DP), AdaptiveUi.dp(context, 18),
+                AdaptiveUi.dp(context, DIALOG_PADDING_DP), AdaptiveUi.dp(context, 18));
         root.setBackground(ThemeConfig.createGlassCardDrawable(
-                24f, 0xF2121A2E, 0xF20A0F1D, p.borderLuminous, 2));
+                AdaptiveUi.dpf(context, 24f), 0xF2121A2E, 0xF20A0F1D, p.borderLuminous, 2));
 
         // Header Row: Title + City Selector + Close Button
         LinearLayout header = new LinearLayout(context);
@@ -91,9 +98,11 @@ public final class PlusCodeDialog {
         cityBtn.setTextColor(p.textSecondary);
         cityBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         cityBtn.setTypeface(Typeface.DEFAULT_BOLD);
-        cityBtn.setPadding(12, 8, 12, 8);
+        cityBtn.setMinHeight(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+        cityBtn.setGravity(Gravity.CENTER);
+        cityBtn.setPadding(AdaptiveUi.dp(context, 12), AdaptiveUi.dp(context, 8), AdaptiveUi.dp(context, 12), AdaptiveUi.dp(context, 8));
         cityBtn.setBackground(ThemeConfig.createInteractiveTileDrawable(
-                10f, p.tileDefault, p.tilePressed, p.borderSubtle, p.accentPrimary));
+                AdaptiveUi.dpf(context, 10f), p.tileDefault, p.tilePressed, p.borderSubtle, p.accentPrimary));
         cityBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -112,12 +121,14 @@ public final class PlusCodeDialog {
         closeBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
         closeBtn.setTypeface(Typeface.DEFAULT_BOLD);
         closeBtn.setGravity(Gravity.CENTER);
-        closeBtn.setPadding(14, 6, 14, 6);
+        closeBtn.setMinHeight(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+        closeBtn.setMinWidth(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+        closeBtn.setPadding(AdaptiveUi.dp(context, 14), AdaptiveUi.dp(context, 6), AdaptiveUi.dp(context, 14), AdaptiveUi.dp(context, 6));
         LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        closeLp.leftMargin = 10;
+        closeLp.leftMargin = AdaptiveUi.dp(context, 10);
         closeBtn.setBackground(ThemeConfig.createInteractiveTileDrawable(
-                10f, p.tileDefault, p.accentDanger, p.borderSubtle, p.accentDanger));
+                AdaptiveUi.dpf(context, 10f), p.tileDefault, p.accentDanger, p.borderSubtle, p.accentDanger));
         closeBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -131,20 +142,20 @@ public final class PlusCodeDialog {
         parkedHint.setText(I18n.tr(context, I18n.KEY_SETUP_PARKED));
         parkedHint.setTextColor(p.textSecondary);
         parkedHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        parkedHint.setPadding(0, 6, 0, 0);
+        parkedHint.setPadding(0, AdaptiveUi.dp(context, 6), 0, 0);
         root.addView(parkedHint);
 
         // Input Display + Go CTA Row
         LinearLayout inputRow = new LinearLayout(context);
         inputRow.setOrientation(LinearLayout.HORIZONTAL);
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
-        inputRow.setPadding(16, 10, 10, 10);
+        inputRow.setPadding(AdaptiveUi.dp(context, 16), AdaptiveUi.dp(context, 10), AdaptiveUi.dp(context, 10), AdaptiveUi.dp(context, 10));
         inputRow.setBackground(ThemeConfig.createGlassCardDrawable(
-                14f, p.wellBackground, p.wellBackground, p.accentPrimary, 2));
+                AdaptiveUi.dpf(context, 14f), p.wellBackground, p.wellBackground, p.accentPrimary, 2));
         LinearLayout.LayoutParams inputRowLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        inputRowLp.topMargin = 12;
-        inputRowLp.bottomMargin = 12;
+        inputRowLp.topMargin = AdaptiveUi.dp(context, 12);
+        inputRowLp.bottomMargin = AdaptiveUi.dp(context, 12);
 
         final TextView codeView = new TextView(context);
         codeView.setText("VD: QMVX2P");
@@ -160,9 +171,11 @@ public final class PlusCodeDialog {
         goBtn.setTextColor(0xFF042412);
         goBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         goBtn.setTypeface(Typeface.DEFAULT_BOLD);
-        goBtn.setPadding(20, 12, 20, 12);
+        goBtn.setMinHeight(AdaptiveUi.dp(context, LayoutPolicy.MIN_TOUCH_TARGET_DP));
+        goBtn.setGravity(Gravity.CENTER);
+        goBtn.setPadding(AdaptiveUi.dp(context, 20), AdaptiveUi.dp(context, 12), AdaptiveUi.dp(context, 20), AdaptiveUi.dp(context, 12));
         goBtn.setBackground(ThemeConfig.createInteractiveTileDrawable(
-                11f, p.accentSuccess, p.accentPrimary, p.borderLuminous, p.textPrimary));
+                AdaptiveUi.dpf(context, 11f), p.accentSuccess, p.accentPrimary, p.borderLuminous, p.textPrimary));
         goBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -190,10 +203,12 @@ public final class PlusCodeDialog {
         inputRow.addView(goBtn);
         root.addView(inputRow, inputRowLp);
 
-        // 21-button Keypad Grid (7 columns x 3 rows — clean symmetric layout, no '+' needed)
+        // 21-button keypad: 7 columns x 3 rows when it fits; fewer, wider rows in narrow windows.
+        int dialogWidthDp = AdaptiveUi.specFor(context).dialogWidthDp(DIALOG_WIDTH_DP);
+        int keyColumns = LayoutPolicy.fitColumns(dialogWidthDp - 2 * DIALOG_PADDING_DP,
+                LayoutPolicy.MIN_TOUCH_TARGET_DP, 2 * KEY_MARGIN_DP, MAX_KEY_COLUMNS);
         GridLayout grid = new GridLayout(context);
-        grid.setColumnCount(7);
-        grid.setRowCount(3);
+        grid.setColumnCount(keyColumns);
 
         for (int i = 0; i < KEYS.length; i++) {
             final String key = KEYS[i];
@@ -205,12 +220,14 @@ public final class PlusCodeDialog {
             keyBtn.setGravity(Gravity.CENTER);
             int fill = "⌫".equals(key) ? 0x66EA2143 : p.tileDefault;
             keyBtn.setBackground(ThemeConfig.createInteractiveTileDrawable(
-                    12f, fill, p.tilePressed, p.borderSubtle, p.accentPrimary));
+                    AdaptiveUi.dpf(context, 12f), fill, p.tilePressed, p.borderSubtle, p.accentPrimary));
 
             GridLayout.LayoutParams klp = new GridLayout.LayoutParams();
-            klp.width = 74;
-            klp.height = 58;
-            klp.setMargins(5, 5, 5, 5);
+            klp.width = 0;
+            klp.height = AdaptiveUi.dp(context, KEY_HEIGHT_DP);
+            klp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1, 1f);
+            int keyMargin = AdaptiveUi.dp(context, KEY_MARGIN_DP);
+            klp.setMargins(keyMargin, keyMargin, keyMargin, keyMargin);
             keyBtn.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -232,14 +249,10 @@ public final class PlusCodeDialog {
             });
             grid.addView(keyBtn, klp);
         }
-        root.addView(grid);
+        root.addView(grid, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        dialog.setContentView(root);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(0x00000000));
-            dialog.getWindow().setLayout(620, WindowManager.LayoutParams.WRAP_CONTENT);
-        }
-        dialog.show();
+        AdaptiveUi.showBounded(dialog, root, DIALOG_WIDTH_DP, true);
     }
 
     private static int savedCityIndex(Context context) {

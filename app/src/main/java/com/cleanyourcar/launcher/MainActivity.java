@@ -17,11 +17,13 @@ import android.widget.FrameLayout;
 import android.widget.GridLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.cleanyourcar.launcher.integration.HeadUnitAdapter;
 import com.cleanyourcar.launcher.integration.IntegrationController;
 import com.cleanyourcar.launcher.integration.MediaState;
+import com.cleanyourcar.launcher.layout.LayoutPolicy;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -29,7 +31,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * CleanYourCar Home Activity (1024x600 @ 160dpi target).
+ * CleanYourCar Home Activity. Designed at 1024x600 @ 160dpi; sizes are dp and fitted to the
+ * current window by {@link LayoutPolicy}.
  * Pure Android Framework SDK (zero AppCompat/Material dependencies, zero INTERNET permission).
  */
 public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
@@ -43,6 +46,8 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
     private int activePage = PAGE_DASHBOARD;
     private int currentGridSubPage = 0;
 
+    private FrameLayout hostLayout;
+    private LayoutPolicy.LayoutSpec spec;
     private LinearLayout rootLayout;
     private FrameLayout contentContainer;
     private View dashboardView;
@@ -63,6 +68,13 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
     private TextView pageDotsText;
     private GestureDetector swipeDetector;
 
+    private final Runnable refitRunnable = new Runnable() {
+        @Override
+        public void run() {
+            refit();
+        }
+    };
+
     private final Runnable clockTicker = new Runnable() {
         @Override
         public void run() {
@@ -75,6 +87,19 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setupSwipeDetector();
+        hostLayout = new FrameLayout(this);
+        AdaptiveUi.applySystemInsetsAsPadding(hostLayout, refitRunnable);
+        hostLayout.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                    int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                    v.post(refitRunnable);
+                }
+            }
+        });
+        setContentView(hostLayout);
+        spec = AdaptiveUi.specFor(this);
         rebuildFullUi();
         if (savedInstanceState == null) {
             SetupActivity.maybeAutoOpen(this);
@@ -144,7 +169,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
             showPage(PAGE_APP_GRID);
         } else {
             List<AppRepository.AppEntry> apps = appRepository.loadVisibleApps(this);
-            int perPage = Math.max(2, ThemeConfig.getGridColumns(this) * 2 - 2);
+            int perPage = spec.appSlotsPerPage;
             int totalPages = Math.max(1, (int) Math.ceil((double) Math.max(1, apps.size()) / perPage));
             if (currentGridSubPage + 1 < totalPages) {
                 currentGridSubPage++;
@@ -164,6 +189,23 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         }
     }
 
+    private LayoutPolicy.LayoutSpec currentSpec() {
+        if (hostLayout != null && hostLayout.getWidth() > 0 && hostLayout.getHeight() > 0) {
+            return AdaptiveUi.specFor(this, hostLayout);
+        }
+        return AdaptiveUi.specFor(this);
+    }
+
+    /** Rebuilds only when the window, insets, font scale or grid preference change the fit. */
+    private void refit() {
+        if (hostLayout == null || hostLayout.getWidth() == 0 || hostLayout.getHeight() == 0) return;
+        LayoutPolicy.LayoutSpec next = AdaptiveUi.specFor(this, hostLayout);
+        if (!next.equals(spec)) {
+            spec = next;
+            rebuildFullUi();
+        }
+    }
+
     private void rebuildFullUi() {
         ThemeConfig.Palette p = ThemeConfig.getActivePalette(this);
         boolean dockLeft = ThemeConfig.isDockLeft(this);
@@ -174,13 +216,13 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
 
         View dockView = buildLeftDock(p);
         LinearLayout.LayoutParams dockLp = new LinearLayout.LayoutParams(
-                84, ViewGroup.LayoutParams.MATCH_PARENT);
-        dockLp.topMargin = 14;
-        dockLp.bottomMargin = 14;
+                dp(spec.dockWidthDp), ViewGroup.LayoutParams.MATCH_PARENT);
+        dockLp.topMargin = dp(spec.marginDp);
+        dockLp.bottomMargin = dp(spec.marginDp);
         if (dockLeft) {
-            dockLp.leftMargin = 14;
+            dockLp.leftMargin = dp(spec.marginDp);
         } else {
-            dockLp.rightMargin = 14;
+            dockLp.rightMargin = dp(spec.marginDp);
         }
 
         contentContainer = new FrameLayout(this);
@@ -190,10 +232,8 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         dashboardView = buildDashboardView(p);
         appGridView = buildAppGridView(p);
 
-        contentContainer.addView(dashboardView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        contentContainer.addView(appGridView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        contentContainer.addView(dashboardView, contentChildParams());
+        contentContainer.addView(appGridView, contentChildParams());
 
         if (dockLeft) {
             rootLayout.addView(dockView, dockLp);
@@ -203,10 +243,22 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
             rootLayout.addView(dockView, dockLp);
         }
 
-        setContentView(rootLayout);
+        hostLayout.removeAllViews();
+        hostLayout.addView(rootLayout, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         updateClockAndDate();
         onMediaStateChanged(integration != null ? integration.mediaState() : MediaState.unknown());
         showPage(activePage);
+    }
+
+    /** Full width, or centered at the capped content width on ultrawide windows. */
+    private FrameLayout.LayoutParams contentChildParams() {
+        if (spec.isContentCapped()) {
+            return new FrameLayout.LayoutParams(dp(spec.contentWidthDp + 2 * spec.marginDp),
+                    ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_HORIZONTAL);
+        }
+        return new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     }
 
     private void showPage(int page) {
@@ -224,21 +276,25 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
             ThemeConfig.Palette p = ThemeConfig.getActivePalette(this);
             int fill = (page == PAGE_APP_GRID) ? p.accentPrimary : p.tileDefault;
             dockPageToggleBtn.setBackground(ThemeConfig.createInteractiveTileDrawable(
-                    12f, fill, p.tilePressed, p.borderLuminous, p.accentPrimary));
+                    dpf(12f), fill, p.tilePressed, p.borderLuminous, p.accentPrimary));
         }
     }
 
     private View buildLeftDock(final ThemeConfig.Palette p) {
+        FrameLayout dockFrame = new FrameLayout(this);
+        dockFrame.setPadding(dp(spec.dockSidePaddingDp), dp(spec.dockPaddingDp),
+                dp(spec.dockSidePaddingDp), dp(spec.dockPaddingDp));
+        dockFrame.setBackground(ThemeConfig.createGlassCardDrawable(
+                999f, p.dockTop, p.dockBottom, p.borderLuminous, 1));
         LinearLayout dock = new LinearLayout(this);
         dock.setOrientation(LinearLayout.VERTICAL);
         dock.setGravity(Gravity.CENTER_HORIZONTAL);
-        dock.setPadding(8, 16, 8, 16);
-        dock.setBackground(ThemeConfig.createGlassCardDrawable(
-                999f, p.dockTop, p.dockBottom, p.borderLuminous, 1));
+        dockFrame.addView(AdaptiveUi.fillingScroll(this, dock), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         dockClockText = new TextView(this);
         dockClockText.setTextColor(p.textPrimary);
-        dockClockText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 23f);
+        dockClockText.setTextSize(TypedValue.COMPLEX_UNIT_SP, spec.dockClockSp);
         dockClockText.setTypeface(Typeface.DEFAULT_BOLD);
         dockClockText.setGravity(Gravity.CENTER);
         dock.addView(dockClockText);
@@ -248,13 +304,15 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         dockStatusText.setTextColor(p.textSecondary);
         dockStatusText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         dockStatusText.setGravity(Gravity.CENTER);
+        dockStatusText.setSingleLine(true);
+        dockStatusText.setEllipsize(TextUtils.TruncateAt.END);
         dock.addView(dockStatusText);
 
         LinearLayout iconsCol = new LinearLayout(this);
         iconsCol.setOrientation(LinearLayout.VERTICAL);
         iconsCol.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams colLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
 
         iconsCol.addView(createDockDroplet(p, VectorIcons.ICON_GOOGLE_MAPSPIN, false, new View.OnClickListener() {
             @Override
@@ -290,7 +348,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         gridToggleWrap.setBackground(ThemeConfig.createInteractiveTileDrawable(
                 999f, p.tileDefault, p.tilePressed, p.borderLuminous, p.accentPrimary));
         View gridIcon = VectorIcons.createIconView(this, VectorIcons.ICON_GRID, p.textPrimary, 26);
-        FrameLayout.LayoutParams gilp = new FrameLayout.LayoutParams(26, 26, Gravity.CENTER);
+        FrameLayout.LayoutParams gilp = new FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER);
         gridToggleWrap.addView(gridIcon, gilp);
         gridToggleWrap.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -305,8 +363,9 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
                 return true;
             }
         });
-        dock.addView(gridToggleWrap, new LinearLayout.LayoutParams(56, 56));
-        return dock;
+        dock.addView(gridToggleWrap, new LinearLayout.LayoutParams(
+                dp(spec.dockToggleDp), dp(spec.dockToggleDp)));
+        return dockFrame;
     }
 
     private View createDockDroplet(
@@ -324,70 +383,81 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
                 if (realIcon != null) {
                     ImageView iv = new ImageView(this);
                     iv.setImageDrawable(realIcon);
-                    droplet.addView(iv, new FrameLayout.LayoutParams(36, 36, Gravity.CENTER));
+                    droplet.addView(iv, new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER));
                 } else {
                     View icon = VectorIcons.createIconView(this, iconId, p.textPrimary, 28);
-                    droplet.addView(icon, new FrameLayout.LayoutParams(28, 28, Gravity.CENTER));
+                    droplet.addView(icon, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
                 }
             } catch (Throwable t) {
                 View icon = VectorIcons.createIconView(this, iconId, p.textPrimary, 28);
-                droplet.addView(icon, new FrameLayout.LayoutParams(28, 28, Gravity.CENTER));
+                droplet.addView(icon, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
             }
         } else {
             View icon = VectorIcons.createIconView(this, iconId, p.textPrimary, 26);
-            droplet.addView(icon, new FrameLayout.LayoutParams(26, 26, Gravity.CENTER));
+            droplet.addView(icon, new FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER));
         }
         droplet.setOnClickListener(onClick);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(58, 58);
-        lp.topMargin = 6;
-        lp.bottomMargin = 6;
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                dp(spec.dockButtonDp), dp(spec.dockButtonDp));
+        lp.topMargin = dp(spec.dockButtonMarginDp);
+        lp.bottomMargin = dp(spec.dockButtonMarginDp);
         droplet.setLayoutParams(lp);
         return droplet;
     }
 
     private View buildDashboardView(final ThemeConfig.Palette p) {
+        boolean stacked = spec.mode == LayoutPolicy.Mode.STACKED;
         LinearLayout dash = new LinearLayout(this);
-        dash.setOrientation(LinearLayout.HORIZONTAL);
-        dash.setPadding(14, 14, 14, 14);
+        dash.setOrientation(stacked ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        int margin = dp(spec.marginDp);
+        dash.setPadding(margin, margin, margin, margin);
 
         View musicCol = buildMusicBentoColumn(p);
         View rightCol = buildRightBentoColumn(p);
 
-        LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT, 1.0f);
-        LinearLayout.LayoutParams rightLp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT, 1.0f);
+        LinearLayout.LayoutParams firstLp = dashColumnParams(stacked);
+        LinearLayout.LayoutParams secondLp = dashColumnParams(stacked);
+        if (stacked) {
+            firstLp.bottomMargin = margin;
+        } else {
+            firstLp.rightMargin = margin;
+        }
 
         if (ThemeConfig.isSwapDashboardColumns(this)) {
-            rightLp.rightMargin = 14;
-            dash.addView(rightCol, rightLp);
-            dash.addView(musicCol, leftLp);
+            dash.addView(rightCol, firstLp);
+            dash.addView(musicCol, secondLp);
         } else {
-            leftLp.rightMargin = 14;
-            dash.addView(musicCol, leftLp);
-            dash.addView(rightCol, rightLp);
+            dash.addView(musicCol, firstLp);
+            dash.addView(rightCol, secondLp);
         }
-        return dash;
+        return AdaptiveUi.fillingScroll(this, dash);
+    }
+
+    private static LinearLayout.LayoutParams dashColumnParams(boolean stacked) {
+        return stacked
+                ? new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f)
+                : new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.0f);
     }
 
     private View buildMusicBentoColumn(final ThemeConfig.Palette p) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(20, 18, 20, 18);
+        card.setPadding(dp(20), dp(18), dp(20), dp(18));
         card.setBackground(ThemeConfig.createGlassCardDrawable(
-                24f, p.cardTop, p.cardBottom, p.borderLuminous, 1));
+                dpf(24f), p.cardTop, p.cardBottom, p.borderLuminous, 1));
 
         // Top Segmented Pill: [Nhạc Bluetooth | Nhạc USB] (0% Emoji, Convex Liquid Pill)
         LinearLayout segBar = new LinearLayout(this);
         segBar.setOrientation(LinearLayout.HORIZONTAL);
-        segBar.setPadding(4, 4, 4, 4);
+        segBar.setPadding(dp(4), dp(4), dp(4), dp(4));
         segBar.setBackground(ThemeConfig.createGlassCardDrawable(
                 999f, p.wellBackground, p.wellBackground, p.borderSubtle, 1));
 
         btSegBtn = new TextView(this);
         btSegBtn.setText(I18n.tr(this, I18n.KEY_BT_MUSIC));
         btSegBtn.setGravity(Gravity.CENTER);
-        btSegBtn.setPadding(10, 14, 10, 14);
+        btSegBtn.setPadding(dp(10), dp(14), dp(10), dp(14));
         btSegBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
         btSegBtn.setTypeface(Typeface.DEFAULT_BOLD);
         btSegBtn.setOnClickListener(new View.OnClickListener() {
@@ -407,7 +477,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         usbSegBtn = new TextView(this);
         usbSegBtn.setText(I18n.tr(this, I18n.KEY_USB_MUSIC));
         usbSegBtn.setGravity(Gravity.CENTER);
-        usbSegBtn.setPadding(10, 14, 10, 14);
+        usbSegBtn.setPadding(dp(10), dp(14), dp(10), dp(14));
         usbSegBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
         usbSegBtn.setTypeface(Typeface.DEFAULT_BOLD);
         usbSegBtn.setOnClickListener(new View.OnClickListener() {
@@ -433,15 +503,15 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         midRow.setOrientation(LinearLayout.HORIZONTAL);
         midRow.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams midLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
 
         FrameLayout albumArt = new FrameLayout(this);
         albumArt.setBackground(ThemeConfig.createGlassCardDrawable(
-                22f, 0x66FFFFFF, p.accentPrimary, p.borderLuminous, 1));
+                dpf(22f), 0x66FFFFFF, p.accentPrimary, p.borderLuminous, 1));
         View musicVec = VectorIcons.createIconView(this, VectorIcons.ICON_MUSIC, p.textPrimary, 34);
-        albumArt.addView(musicVec, new FrameLayout.LayoutParams(34, 34, Gravity.CENTER));
-        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(76, 76);
-        alp.rightMargin = 18;
+        albumArt.addView(musicVec, new FrameLayout.LayoutParams(dp(34), dp(34), Gravity.CENTER));
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(dp(76), dp(76));
+        alp.rightMargin = dp(18);
         albumArt.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -470,7 +540,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         songSubText.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        subLp.topMargin = 6;
+        subLp.topMargin = dp(6);
         textCol.addView(songSubText, subLp);
 
         midRow.addView(textCol, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -501,11 +571,11 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
             }
         });
 
-        LinearLayout.LayoutParams t1 = new LinearLayout.LayoutParams(0, 64, 1f);
-        t1.rightMargin = 12;
-        LinearLayout.LayoutParams t2 = new LinearLayout.LayoutParams(0, 64, 1f);
-        t2.rightMargin = 12;
-        LinearLayout.LayoutParams t3 = new LinearLayout.LayoutParams(0, 64, 1f);
+        LinearLayout.LayoutParams t1 = new LinearLayout.LayoutParams(0, dp(spec.transportHeightDp), 1f);
+        t1.rightMargin = dp(12);
+        LinearLayout.LayoutParams t2 = new LinearLayout.LayoutParams(0, dp(spec.transportHeightDp), 1f);
+        t2.rightMargin = dp(12);
+        LinearLayout.LayoutParams t3 = new LinearLayout.LayoutParams(0, dp(spec.transportHeightDp), 1f);
 
         transport.addView(prevBtn, t1);
         transport.addView(playWrap, t2);
@@ -522,7 +592,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         wrap.setBackground(ThemeConfig.createInteractiveTileDrawable(
                 999f, p.accentPrimary, p.tilePressed, p.borderLuminous, p.textPrimary));
         playIconView = VectorIcons.createIconView(this, VectorIcons.ICON_PLAY, p.textPrimary, 28);
-        wrap.addView(playIconView, new FrameLayout.LayoutParams(28, 28, Gravity.CENTER));
+        wrap.addView(playIconView, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
         wrap.setOnClickListener(onClick);
         return wrap;
     }
@@ -534,7 +604,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         wrap.setBackground(ThemeConfig.createInteractiveTileDrawable(
                 999f, fill, p.tilePressed, p.borderLuminous, p.accentPrimary));
         View icon = VectorIcons.createIconView(this, iconId, p.textPrimary, 26);
-        wrap.addView(icon, new FrameLayout.LayoutParams(26, 26, Gravity.CENTER));
+        wrap.addView(icon, new FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER));
         wrap.setOnClickListener(onClick);
         return wrap;
     }
@@ -546,18 +616,18 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         // Top Liquid Pane: Large Date + Large Google Maps & Enter Destination Buttons
         LinearLayout navCard = new LinearLayout(this);
         navCard.setOrientation(LinearLayout.VERTICAL);
-        navCard.setPadding(20, 18, 20, 18);
+        navCard.setPadding(dp(20), dp(18), dp(20), dp(18));
         navCard.setBackground(ThemeConfig.createGlassCardDrawable(
-                24f, p.cardTop, p.cardBottom, p.borderLuminous, 1));
+                dpf(24f), p.cardTop, p.cardBottom, p.borderLuminous, 1));
         LinearLayout.LayoutParams navLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.12f);
-        navLp.bottomMargin = 14;
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1.12f);
+        navLp.bottomMargin = dp(14);
 
         LinearLayout dateBlock = new LinearLayout(this);
         dateBlock.setOrientation(LinearLayout.VERTICAL);
         dateBlock.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
 
         dateHeaderText = new TextView(this);
         dateHeaderText.setText(VietnameseDateFormatter.formatToday(new Date()));
@@ -595,9 +665,9 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
                     }
                 });
 
-        LinearLayout.LayoutParams b1 = new LinearLayout.LayoutParams(0, 92, 1f);
-        b1.rightMargin = 10;
-        LinearLayout.LayoutParams b2 = new LinearLayout.LayoutParams(0, 92, 1f);
+        LinearLayout.LayoutParams b1 = new LinearLayout.LayoutParams(0, dp(spec.navButtonHeightDp), 1f);
+        b1.rightMargin = dp(10);
+        LinearLayout.LayoutParams b2 = new LinearLayout.LayoutParams(0, dp(spec.navButtonHeightDp), 1f);
         navButtonsRow.addView(mapsLiveBtn, b1);
         navButtonsRow.addView(plusCodeBtn, b2);
         navCard.addView(navButtonsRow);
@@ -606,17 +676,17 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         // Bottom Liquid Pane: Cockpit Lens Controls (Removed "Độ sáng" button as requested)
         LinearLayout utilCard = new LinearLayout(this);
         utilCard.setOrientation(LinearLayout.VERTICAL);
-        utilCard.setPadding(20, 16, 20, 16);
+        utilCard.setPadding(dp(20), dp(16), dp(20), dp(16));
         utilCard.setBackground(ThemeConfig.createGlassCardDrawable(
-                24f, p.cardTop, p.cardBottom, p.borderLuminous, 1));
+                dpf(24f), p.cardTop, p.cardBottom, p.borderLuminous, 1));
         LinearLayout.LayoutParams utilLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.88f);
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0.88f);
 
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams r1Lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        r1Lp.bottomMargin = 10;
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        r1Lp.bottomMargin = dp(10);
 
         View camBtn = createLiquidActionLens(p, I18n.tr(this, I18n.KEY_DASHCAM), VectorIcons.ICON_CAMERA, p.tileDefault, p.borderLuminous, new View.OnClickListener() {
             @Override
@@ -631,7 +701,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
             }
         });
         LinearLayout.LayoutParams u1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-        u1.rightMargin = 10;
+        u1.rightMargin = dp(10);
         LinearLayout.LayoutParams u2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
         row1.addView(camBtn, u1);
         row1.addView(eqBtn, u2);
@@ -644,7 +714,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
             }
         });
         LinearLayout.LayoutParams r2Lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         utilCard.addView(nightBtn, r2Lp);
 
         col.addView(utilCard, utilLp);
@@ -656,9 +726,10 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(12, 10, 12, 10);
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setMinimumHeight(dp(spec.actionRowMinHeightDp));
         row.setBackground(ThemeConfig.createInteractiveTileDrawable(
-                18f, normalFill, p.tilePressed, borderColor, p.accentPrimary));
+                dpf(18f), normalFill, p.tilePressed, borderColor, p.accentPrimary));
         row.setOnClickListener(onClick);
 
         if (iconId == VectorIcons.ICON_GOOGLE_MAPSPIN) {
@@ -669,25 +740,25 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
                 if (realIcon != null) {
                     ImageView iv = new ImageView(this);
                     iv.setImageDrawable(realIcon);
-                    LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(32, 32);
-                    ilp.rightMargin = 8;
+                    LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(32), dp(32));
+                    ilp.rightMargin = dp(8);
                     row.addView(iv, ilp);
                 } else {
                     View icon = VectorIcons.createIconView(this, iconId, p.textPrimary, 24);
-                    LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(24, 24);
-                    ilp.rightMargin = 8;
+                    LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(24), dp(24));
+                    ilp.rightMargin = dp(8);
                     row.addView(icon, ilp);
                 }
             } catch (Throwable ignored) {
                 View icon = VectorIcons.createIconView(this, iconId, p.textPrimary, 24);
-                LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(24, 24);
-                ilp.rightMargin = 8;
+                LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(24), dp(24));
+                ilp.rightMargin = dp(8);
                 row.addView(icon, ilp);
             }
         } else {
             View icon = VectorIcons.createIconView(this, iconId, p.textPrimary, 24);
-            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(24, 24);
-            ilp.rightMargin = 8;
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(24), dp(24));
+            ilp.rightMargin = dp(8);
             row.addView(icon, ilp);
         }
 
@@ -704,12 +775,13 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
     private View buildAppGridView(ThemeConfig.Palette p) {
         LinearLayout wrapper = new LinearLayout(this);
         wrapper.setOrientation(LinearLayout.VERTICAL);
-        wrapper.setPadding(7, 7, 7, 14);
+        wrapper.setPadding(dp(7), dp(7), dp(7), dp(14));
 
         appsGridLayout = new GridLayout(this);
+        ScrollView gridScroll = AdaptiveUi.fillingScroll(this, appsGridLayout);
         LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        wrapper.addView(appsGridLayout, glp);
+        wrapper.addView(gridScroll, glp);
 
         pageDotsText = new TextView(this);
         pageDotsText.setTextColor(p.textSecondary);
@@ -723,14 +795,12 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
     private void populateAppGrid() {
         if (appsGridLayout == null) return;
         ThemeConfig.Palette p = ThemeConfig.getActivePalette(this);
-        int cols = ThemeConfig.getGridColumns(this);
-        int rows = 2;
+        int cols = spec.gridColumns;
         appsGridLayout.removeAllViews();
         appsGridLayout.setColumnCount(cols);
-        appsGridLayout.setRowCount(rows);
 
         List<AppRepository.AppEntry> apps = appRepository.loadVisibleApps(this);
-        int appSlotsPerPage = Math.max(2, (cols * rows) - 2);
+        int appSlotsPerPage = spec.appSlotsPerPage;
         int totalPages = Math.max(1, (int) Math.ceil((double) Math.max(1, apps.size()) / appSlotsPerPage));
         if (currentGridSubPage >= totalPages) {
             currentGridSubPage = totalPages - 1;
@@ -783,10 +853,10 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
     private void addTileToGrid(View tile, int cols) {
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
-        lp.height = 240;
+        lp.height = dp(spec.gridTileHeightDp);
         lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1, 1f);
         lp.rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1);
-        lp.setMargins(7, 7, 7, 7);
+        lp.setMargins(dp(7), dp(7), dp(7), dp(7));
         appsGridLayout.addView(tile, lp);
     }
 
@@ -800,9 +870,9 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
-        box.setPadding(12, 16, 12, 16);
+        box.setPadding(dp(12), dp(16), dp(12), dp(16));
         box.setBackground(ThemeConfig.createInteractiveTileDrawable(
-                24f, p.cardTop, p.tilePressed, p.borderLuminous, p.accentPrimary));
+                dpf(24f), p.cardTop, p.tilePressed, p.borderLuminous, p.accentPrimary));
         box.setOnClickListener(onClick);
         if (onLongClick != null) {
             box.setOnLongClickListener(onLongClick);
@@ -811,14 +881,14 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         if (iconDrawable != null) {
             ImageView iv = new ImageView(this);
             iv.setImageDrawable(iconDrawable);
-            box.addView(iv, new LinearLayout.LayoutParams(78, 78));
+            box.addView(iv, new LinearLayout.LayoutParams(dp(78), dp(78)));
         } else {
             FrameLayout lens = new FrameLayout(this);
             lens.setBackground(ThemeConfig.createGlassCardDrawable(
                     999f, 0x66FFFFFF, p.accentPrimary, p.borderLuminous, 1));
             View vec = VectorIcons.createIconView(this, fallbackIconId, p.textPrimary, 34);
-            lens.addView(vec, new FrameLayout.LayoutParams(34, 34, Gravity.CENTER));
-            box.addView(lens, new LinearLayout.LayoutParams(78, 78));
+            lens.addView(vec, new FrameLayout.LayoutParams(dp(34), dp(34), Gravity.CENTER));
+            box.addView(lens, new LinearLayout.LayoutParams(dp(78), dp(78)));
         }
 
         TextView tv = new TextView(this);
@@ -831,7 +901,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         tv.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tlp.topMargin = 10;
+        tlp.topMargin = dp(10);
         box.addView(tv, tlp);
 
         return box;
@@ -850,6 +920,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         LauncherSettingsDialog.show(this, new LauncherSettingsDialog.OnSettingsChangedListener() {
             @Override
             public void onSettingsChanged() {
+                spec = currentSpec();
                 rebuildFullUi();
             }
         });
@@ -922,5 +993,13 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
     @Override
     public void onHealthChanged(HeadUnitAdapter.Health health, String reason) {
         MediaStateText.reportHealth(this, health, reason);
+    }
+
+    private int dp(float value) {
+        return AdaptiveUi.dp(this, value);
+    }
+
+    private float dpf(float value) {
+        return AdaptiveUi.dpf(this, value);
     }
 }
