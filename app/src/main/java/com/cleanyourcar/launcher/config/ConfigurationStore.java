@@ -47,6 +47,7 @@ public final class ConfigurationStore {
     public static final String FILE_NAME = "launcher_configuration.json";
 
     private static final int FORMAT_VERSION = 1;
+    static final String CORRUPT_SUFFIX = ".corrupt-";
     private static final String VISIBILITY_CURATED = "curated";
     private static final String VISIBILITY_DISCOVERED = "discovered";
 
@@ -58,6 +59,8 @@ public final class ConfigurationStore {
     private final Storage storage;
     private final int appVersionCode;
     private LauncherConfiguration current;
+    /** Set when the stored file comes from a newer app version; it must never be overwritten. */
+    private boolean readOnly;
 
     /** Byte persistence; {@link #writeAtomically} must leave previous bytes on failure. */
     public interface Storage {
@@ -65,6 +68,16 @@ public final class ConfigurationStore {
         byte[] read() throws IOException;
 
         void writeAtomically(byte[] data) throws IOException;
+
+        /** Renames the stored data to a sibling named with {@code suffix}, keeping its bytes. */
+        void moveAside(String suffix) throws IOException;
+    }
+
+    /** Thrown by mutations while the stored file belongs to a newer, unsupported format. */
+    public static final class NewerFormatException extends IOException {
+        NewerFormatException() {
+            super("configuration was saved by a newer app version; changes are disabled");
+        }
     }
 
     /** Writes a sibling temp file, syncs it, then renames it over the target. */
@@ -104,6 +117,14 @@ public final class ConfigurationStore {
             if (!temp.renameTo(file)) {
                 temp.delete();
                 throw new IOException("could not replace " + file.getName());
+            }
+        }
+
+        @Override
+        public void moveAside(String suffix) throws IOException {
+            File aside = new File(file.getPath() + suffix);
+            if (file.exists() && !file.renameTo(aside)) {
+                throw new IOException("could not move aside " + file.getName());
             }
         }
     }
@@ -168,6 +189,11 @@ public final class ConfigurationStore {
         }
     }
 
+    /** True when the stored file is from a newer format and all mutations are rejected. */
+    public synchronized boolean isReadOnly() {
+        return readOnly;
+    }
+
     /** Last loaded configuration. */
     public synchronized LauncherConfiguration current() {
         return requireCurrent();
@@ -184,14 +210,27 @@ public final class ConfigurationStore {
 
     /**
      * One-time, idempotent migration. Once the migration marker is stored, legacy role
-     * overrides are never re-imported, so later explicit choices are kept.
+     * overrides are never re-imported, so later explicit choices are kept. A file from a newer
+     * format is used read-only (or ignored if unreadable) and never overwritten; a corrupt file
+     * is moved aside before re-migrating.
      */
     public synchronized MigrationResult migrateLegacy(Map<String, ?> legacy,
             boolean upgradedInstall) throws IOException {
-        LauncherConfiguration stored = parse(storage.read());
-        if (stored != null && stored.migrationVersion >= LauncherConfiguration.MIGRATION_VERSION) {
-            current = withLegacyPreferences(stored, legacy);
+        Stored stored = parse(storage.read());
+        readOnly = stored.newerFormat;
+        if (stored.newerFormat) {
+            current = stored.configuration != null
+                    ? withLegacyPreferences(stored.configuration, legacy)
+                    : fromLegacy(legacy, upgradedInstall).build();
             return new MigrationResult(current, false);
+        }
+        if (stored.configuration != null && stored.configuration.migrationVersion
+                >= LauncherConfiguration.MIGRATION_VERSION) {
+            current = withLegacyPreferences(stored.configuration, legacy);
+            return new MigrationResult(current, false);
+        }
+        if (stored.corrupt) {
+            storage.moveAside(CORRUPT_SUFFIX + System.currentTimeMillis());
         }
         LauncherConfiguration migrated = fromLegacy(legacy, upgradedInstall).build();
         storage.writeAtomically(serialize(migrated));
@@ -338,6 +377,9 @@ public final class ConfigurationStore {
 
     /** Writes first; memory changes only after the bytes are safely replaced. */
     private void persist(LauncherConfiguration.Builder builder) throws IOException {
+        if (readOnly) {
+            throw new NewerFormatException();
+        }
         builder.ui = current.ui;
         builder.navigationCityIndex = current.navigationCityIndex;
         LauncherConfiguration next = builder.build();
@@ -481,39 +523,73 @@ public final class ConfigurationStore {
         }
     }
 
-    /** Returns null for missing or unreadable data, which triggers a fresh migration. */
-    private static LauncherConfiguration parse(byte[] bytes) {
+    /** Classified stored data: missing, current, newer format, or corrupt. */
+    private static final class Stored {
+        final LauncherConfiguration configuration;
+        final boolean newerFormat;
+        final boolean corrupt;
+
+        Stored(LauncherConfiguration configuration, boolean newerFormat, boolean corrupt) {
+            this.configuration = configuration;
+            this.newerFormat = newerFormat;
+            this.corrupt = corrupt;
+        }
+    }
+
+    private static Stored parse(byte[] bytes) {
         if (bytes == null) {
-            return null;
+            return new Stored(null, false, false);
+        }
+        JSONObject root;
+        try {
+            root = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+        } catch (JSONException e) {
+            return new Stored(null, false, true);
+        }
+        int format = root.optInt("formatVersion", -1);
+        if (format > FORMAT_VERSION) {
+            LauncherConfiguration readable;
+            try {
+                readable = parseRoot(root);
+            } catch (JSONException | RuntimeException e) {
+                readable = null;
+            }
+            return new Stored(readable, true, false);
+        }
+        if (format != FORMAT_VERSION) {
+            return new Stored(null, false, true);
         }
         try {
-            JSONObject root = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
-            LauncherConfiguration.Builder builder = LauncherConfiguration.builder();
-            builder.migrationVersion = root.getInt("migrationVersion");
-            builder.curatedAppVisibility =
-                    !VISIBILITY_DISCOVERED.equals(root.optString("appVisibility"));
-            JSONObject profile = root.optJSONObject("profile");
-            if (profile != null) {
-                builder.acceptedProfileId = profile.getString("id");
-                builder.acceptedProfileRevision = profile.getInt("revision");
-                builder.acceptedAdapterId = profile.getString("adapterId");
-                readRoles(profile.optJSONObject("roleDefaults"), builder.profileRoleDefaults);
-            }
-            readRoles(root.optJSONObject("roleOverrides"), builder.roleOverrides);
-            JSONObject validation = root.optJSONObject("validationKeys");
-            if (validation != null) {
-                Iterator<String> keys = validation.keys();
-                while (keys.hasNext()) {
-                    String key = keys.next();
-                    if (CapabilityRegistry.Capability.fromId(key) != null) {
-                        builder.validationKeys.put(key, validation.getString(key));
-                    }
+            return new Stored(parseRoot(root), false, false);
+        } catch (JSONException e) {
+            return new Stored(null, false, true);
+        }
+    }
+
+    private static LauncherConfiguration parseRoot(JSONObject root) throws JSONException {
+        LauncherConfiguration.Builder builder = LauncherConfiguration.builder();
+        builder.migrationVersion = root.getInt("migrationVersion");
+        builder.curatedAppVisibility =
+                !VISIBILITY_DISCOVERED.equals(root.optString("appVisibility"));
+        JSONObject profile = root.optJSONObject("profile");
+        if (profile != null) {
+            builder.acceptedProfileId = profile.getString("id");
+            builder.acceptedProfileRevision = profile.getInt("revision");
+            builder.acceptedAdapterId = profile.getString("adapterId");
+            readRoles(profile.optJSONObject("roleDefaults"), builder.profileRoleDefaults);
+        }
+        readRoles(root.optJSONObject("roleOverrides"), builder.roleOverrides);
+        JSONObject validation = root.optJSONObject("validationKeys");
+        if (validation != null) {
+            Iterator<String> keys = validation.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                if (CapabilityRegistry.Capability.fromId(key) != null) {
+                    builder.validationKeys.put(key, validation.getString(key));
                 }
             }
-            return builder.build();
-        } catch (JSONException e) {
-            return null;
         }
+        return builder.build();
     }
 
     private static void readRoles(JSONObject json, Map<Role, RoleSelection> into)

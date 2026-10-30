@@ -43,6 +43,7 @@ public class ConfigurationStoreTest {
         byte[] bytes;
         boolean failWrites;
         int writes;
+        final Map<String, byte[]> aside = new LinkedHashMap<>();
 
         @Override
         public byte[] read() {
@@ -56,6 +57,12 @@ public class ConfigurationStoreTest {
             }
             writes++;
             bytes = data.clone();
+        }
+
+        @Override
+        public void moveAside(String suffix) {
+            aside.put(suffix, bytes);
+            bytes = null;
         }
     }
 
@@ -401,5 +408,104 @@ public class ConfigurationStoreTest {
         storage.writeAtomically("second".getBytes(StandardCharsets.UTF_8));
         assertArrayEquals("second".getBytes(StandardCharsets.UTF_8), storage.read());
         assertFalse(new File(dir, "launcher_configuration.json.tmp").exists());
+
+        File aside = new File(dir, "launcher_configuration.json.corrupt-1");
+        aside.delete();
+        storage.moveAside(".corrupt-1");
+        assertNull(storage.read());
+        assertTrue(aside.exists());
+        assertTrue(aside.delete());
+    }
+
+    private static final String NEWER_FORMAT_FILE = "{\"formatVersion\":2,\"migrationVersion\":1,"
+            + "\"appVisibility\":\"discovered\",\"roleOverrides\":{\"navigation\":"
+            + "{\"packageName\":\"com.future.maps\",\"strategyId\":\"google-navigation\"}},"
+            + "\"futureField\":{\"kept\":true}}";
+
+    private static void assertMutationsRejected(ConfigurationStore store) throws Exception {
+        ConfigurationStore.ConfigurationChange change =
+                store.previewProfile(profile("valid-xyauto.json"));
+        assertThrows(ConfigurationStore.NewerFormatException.class,
+                () -> store.applyProfile(change));
+        assertThrows(ConfigurationStore.NewerFormatException.class,
+                () -> store.setRole(Role.DASHCAM,
+                        new RoleSelection("com.example.cam", null, "launch-package", null)));
+        assertThrows(ConfigurationStore.NewerFormatException.class,
+                () -> store.recordValidationKey("overlay", "digest"));
+    }
+
+    @Test
+    public void load_newerFormatFileIsReadOnlyAndNeverOverwritten() throws Exception {
+        FakeStorage storage = new FakeStorage();
+        storage.bytes = NEWER_FORMAT_FILE.getBytes(StandardCharsets.UTF_8);
+        byte[] original = storage.bytes.clone();
+        ConfigurationStore store = new ConfigurationStore(storage, APP_VERSION);
+
+        ConfigurationStore.MigrationResult result =
+                store.migrateLegacy(legacyPrefs("legacy-prefs-existing-user.json"));
+
+        assertFalse(result.migrated);
+        assertTrue(store.isReadOnly());
+        assertEquals("com.future.maps", result.configuration.roles.get(Role.NAVIGATION).packageName);
+        assertFalse(result.configuration.curatedAppVisibility);
+        assertArrayEquals(original, storage.bytes);
+        assertMutationsRejected(store);
+        assertArrayEquals(original, storage.bytes);
+        assertEquals(0, storage.writes);
+        assertTrue(storage.aside.isEmpty());
+        assertEquals("com.future.maps", store.current().roles.get(Role.NAVIGATION).packageName);
+    }
+
+    @Test
+    public void load_unreadableNewerFormatFileUsesLegacyInMemoryWithoutWriting() throws Exception {
+        FakeStorage storage = new FakeStorage();
+        storage.bytes = "{\"formatVersion\":3,\"migrationVersion\":\"later\"}"
+                .getBytes(StandardCharsets.UTF_8);
+        byte[] original = storage.bytes.clone();
+        ConfigurationStore store = new ConfigurationStore(storage, APP_VERSION);
+
+        ConfigurationStore.MigrationResult result =
+                store.migrateLegacy(legacyPrefs("legacy-prefs-existing-user.json"));
+
+        assertFalse(result.migrated);
+        assertTrue(store.isReadOnly());
+        assertEquals("com.waze", result.configuration.roles.get(Role.NAVIGATION).packageName);
+        assertMutationsRejected(store);
+        assertArrayEquals(original, storage.bytes);
+        assertEquals(0, storage.writes);
+        assertTrue(storage.aside.isEmpty());
+    }
+
+    @Test
+    public void migrate_corruptFileIsMovedAsideBeforeRemigrationAndOnlyOnce() throws Exception {
+        FakeStorage storage = new FakeStorage();
+        byte[] corrupt = "{\"formatVersion\":1,\"migrationVer".getBytes(StandardCharsets.UTF_8);
+        storage.bytes = corrupt.clone();
+        Map<String, Object> legacy = legacyPrefs("legacy-prefs-existing-user.json");
+
+        ConfigurationStore.MigrationResult result =
+                new ConfigurationStore(storage, APP_VERSION).migrateLegacy(legacy);
+
+        assertTrue(result.migrated);
+        assertEquals(1, storage.aside.size());
+        Map.Entry<String, byte[]> moved = storage.aside.entrySet().iterator().next();
+        assertTrue(moved.getKey().startsWith(".corrupt-"));
+        assertArrayEquals(corrupt, moved.getValue());
+        assertEquals(1, storage.writes);
+
+        ConfigurationStore again = new ConfigurationStore(storage, APP_VERSION);
+        again.migrateLegacy(legacy);
+        again.setRole(Role.NAVIGATION,
+                new RoleSelection("com.user.choice", null, "google-navigation", null));
+        legacy.put(ThemeConfig.KEY_PKG_MAPS, "com.stale.legacy");
+
+        ConfigurationStore.MigrationResult reloaded =
+                new ConfigurationStore(storage, APP_VERSION).migrateLegacy(legacy);
+
+        assertFalse(reloaded.migrated);
+        assertEquals("com.user.choice",
+                reloaded.configuration.roles.get(Role.NAVIGATION).packageName);
+        assertEquals(1, storage.aside.size());
+        assertEquals(2, storage.writes);
     }
 }
