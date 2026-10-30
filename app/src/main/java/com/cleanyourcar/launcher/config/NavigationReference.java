@@ -4,8 +4,9 @@ import com.cleanyourcar.launcher.PlusCodeCodec;
 
 /**
  * Chooses the reference point used to recover short Plus Codes. A current location fix is used
- * only when permitted, finite, in range, at most ten minutes old, and accurate to 1,000m; the
- * explicit saved reference is the fallback. There is no implicit default city.
+ * only in current-location mode with explicit consent, and only when permitted, finite, in range,
+ * at most ten minutes old, and accurate to 1,000m; the explicit saved city is the fallback.
+ * "None" disables every reference. There is no implicit default city.
  */
 public final class NavigationReference {
 
@@ -15,6 +16,36 @@ public final class NavigationReference {
     public enum Source { CURRENT_LOCATION, SAVED }
 
     public enum Reason { NO_REFERENCE }
+
+    /** The reference the user chose in setup. */
+    public enum Mode {
+        /** Only an explicitly saved city; GPS is never used. */
+        CITY("city"),
+        /** A fresh consented location fix, falling back to the saved city. */
+        CURRENT_LOCATION("current_location"),
+        /** No reference at all: short codes are rejected, full codes still work. */
+        NONE("none");
+
+        private final String key;
+
+        Mode(String key) {
+            this.key = key;
+        }
+
+        public String key() {
+            return key;
+        }
+
+        /** Missing or unknown values mean city-only, which keeps existing saved cities working. */
+        public static Mode fromKey(String key) {
+            for (Mode mode : values()) {
+                if (mode.key.equals(key)) {
+                    return mode;
+                }
+            }
+            return CITY;
+        }
+    }
 
     private NavigationReference() {
     }
@@ -99,7 +130,24 @@ public final class NavigationReference {
         }
     }
 
-    public static ReferenceResult resolve(LocationSample sample, SavedReference saved) {
+    /**
+     * Resolves the reference for the user's mode. GPS counts only in CURRENT_LOCATION mode with
+     * explicit consent; NONE ignores both the fix and any saved city.
+     */
+    public static ReferenceResult resolve(Mode mode, boolean locationConsented,
+            LocationSample sample, SavedReference saved) {
+        if (mode == null || mode == Mode.NONE) {
+            return unavailable();
+        }
+        return resolve(usesLocation(mode, locationConsented) ? sample : LocationSample.NONE, saved);
+    }
+
+    /** True when the location fix may be read at all for this mode and consent. */
+    public static boolean usesLocation(Mode mode, boolean locationConsented) {
+        return mode == Mode.CURRENT_LOCATION && locationConsented;
+    }
+
+    static ReferenceResult resolve(LocationSample sample, SavedReference saved) {
         if (sample != null && sample.isUsable()) {
             return new ReferenceResult(true, sample.lat, sample.lon, Source.CURRENT_LOCATION,
                     null);
@@ -107,6 +155,10 @@ public final class NavigationReference {
         if (saved != null && saved.present) {
             return new ReferenceResult(true, saved.lat, saved.lon, Source.SAVED, null);
         }
+        return unavailable();
+    }
+
+    private static ReferenceResult unavailable() {
         return new ReferenceResult(false, Double.NaN, Double.NaN, null, Reason.NO_REFERENCE);
     }
 

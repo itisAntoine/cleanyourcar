@@ -99,6 +99,47 @@ public class NavigationReferenceTest {
     }
 
     @Test
+    public void noneChoiceRejectsShortCodesEvenWithGrantedPermission() {
+        SavedReference hanoi = SavedReference.fromCityIndex(HANOI_INDEX);
+        // "None" disables both GPS and any leftover saved city, even with consent and a fix.
+        ReferenceResult none = NavigationReference.resolve(NavigationReference.Mode.NONE, true,
+                freshHcmFix(), hanoi);
+        assertFalse(none.available);
+        assertEquals(NavigationReference.Reason.NO_REFERENCE, none.reason);
+        assertNull(NavPayloadParser.parse("QMVX+2P", none));
+        // Full codes keep working without a reference.
+        assertNotNull(NavPayloadParser.parse("7P28QMVX+2P", none));
+    }
+
+    @Test
+    public void grantedPermissionWithoutConsentDoesNotUseGps() {
+        SavedReference hanoi = SavedReference.fromCityIndex(HANOI_INDEX);
+        for (NavigationReference.Mode mode : NavigationReference.Mode.values()) {
+            ReferenceResult noConsent = NavigationReference.resolve(mode, false, freshHcmFix(),
+                    SavedReference.NONE);
+            assertFalse(mode.name(), noConsent.available);
+        }
+        // Without consent the explicit saved city is used instead of the fix.
+        ReferenceResult cityFallback = NavigationReference.resolve(
+                NavigationReference.Mode.CURRENT_LOCATION, false, freshHcmFix(), hanoi);
+        assertEquals(NavigationReference.Source.SAVED, cityFallback.source);
+        // City mode never uses GPS, even with consent.
+        assertEquals(NavigationReference.Source.SAVED, NavigationReference.resolve(
+                NavigationReference.Mode.CITY, true, freshHcmFix(), hanoi).source);
+        // Consent plus current-location mode is the only way GPS becomes the reference.
+        assertEquals(NavigationReference.Source.CURRENT_LOCATION, NavigationReference.resolve(
+                NavigationReference.Mode.CURRENT_LOCATION, true, freshHcmFix(), hanoi).source);
+
+        // Stored mode keys round-trip; unknown or missing values default to city-only.
+        assertEquals(NavigationReference.Mode.NONE,
+                NavigationReference.Mode.fromKey(NavigationReference.Mode.NONE.key()));
+        assertEquals(NavigationReference.Mode.CURRENT_LOCATION, NavigationReference.Mode.fromKey(
+                NavigationReference.Mode.CURRENT_LOCATION.key()));
+        assertEquals(NavigationReference.Mode.CITY, NavigationReference.Mode.fromKey(null));
+        assertEquals(NavigationReference.Mode.CITY, NavigationReference.Mode.fromKey("bogus"));
+    }
+
+    @Test
     public void staleLocationDoesNotOverrideSavedCity() {
         SavedReference hanoi = SavedReference.fromCityIndex(HANOI_INDEX);
         assertTrue(hanoi.present);

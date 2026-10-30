@@ -19,6 +19,7 @@ import android.widget.Toast;
 import com.cleanyourcar.launcher.compat.EnvironmentFacts;
 import com.cleanyourcar.launcher.config.ConfigurationStore;
 import com.cleanyourcar.launcher.config.LauncherConfiguration;
+import com.cleanyourcar.launcher.config.NavigationReference;
 import com.cleanyourcar.launcher.config.RoleSelection.Role;
 
 import java.io.IOException;
@@ -37,6 +38,7 @@ public class SetupActivity extends Activity {
     static final String PREFS = "cleanyourcar_setup";
     static final String KEY_SETUP_SEEN = "setup_seen";
     private static final String KEY_CONSENT_PREFIX = "consent_";
+    private static final String KEY_REFERENCE_MODE = "reference_mode";
 
     private static final int REQ_HOME = 1;
     private static final int REQ_IMPORT = 2;
@@ -59,6 +61,23 @@ public class SetupActivity extends Activity {
 
     static SharedPreferences setupPrefs(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    static NavigationReference.Mode referenceMode(Context context) {
+        return NavigationReference.Mode.fromKey(
+                setupPrefs(context).getString(KEY_REFERENCE_MODE, null));
+    }
+
+    static void setReferenceMode(Context context, NavigationReference.Mode mode) {
+        setupPrefs(context).edit().putString(KEY_REFERENCE_MODE, mode.key()).apply();
+    }
+
+    static boolean isConsented(Context context, SetupFlow.Feature feature) {
+        return setupPrefs(context).getBoolean(consentKey(feature), false);
+    }
+
+    private static String consentKey(SetupFlow.Feature feature) {
+        return KEY_CONSENT_PREFIX + feature.name().toLowerCase(java.util.Locale.US);
     }
 
     @Override
@@ -158,7 +177,9 @@ public class SetupActivity extends Activity {
 
         // 4. Plus Code reference
         content.addView(SetupUi.section(this, p, I18n.tr(this, I18n.KEY_SETUP_REFERENCE)));
-        Integer saved = config.savedNavigationReference.cityIndex;
+        NavigationReference.Mode mode = referenceMode(this);
+        Integer saved = mode == NavigationReference.Mode.NONE
+                ? null : config.savedNavigationReference.cityIndex;
         for (int i = 0; i < PlusCodeCodec.VIETNAM_PRESETS.length; i++) {
             final int index = i;
             SetupUi.addRow(content, SetupUi.button(this, p, PlusCodeCodec.VIETNAM_PRESETS[i].name,
@@ -167,13 +188,16 @@ public class SetupActivity extends Activity {
                         public void onClick(View v) {
                             ThemeConfig.prefs(SetupActivity.this).edit()
                                     .putInt(ThemeConfig.KEY_CITY_INDEX, index).apply();
+                            setReferenceMode(SetupActivity.this, NavigationReference.Mode.CITY);
                             render();
                         }
                     }));
         }
         SetupUi.addRow(content, SetupUi.button(this, p,
                 I18n.tr(this, I18n.KEY_USE_CURRENT_LOCATION),
-                flow.isConsented(SetupFlow.Feature.CURRENT_LOCATION) && hasLocationPermission(),
+                mode == NavigationReference.Mode.CURRENT_LOCATION
+                        && flow.isConsented(SetupFlow.Feature.CURRENT_LOCATION)
+                        && hasLocationPermission(),
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
@@ -181,7 +205,7 @@ public class SetupActivity extends Activity {
                     }
                 }));
         SetupUi.addRow(content, SetupUi.button(this, p, I18n.tr(this, I18n.KEY_NO_REFERENCE),
-                saved == null, new View.OnClickListener() {
+                mode == NavigationReference.Mode.NONE, new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
                         chooseReference(SetupFlow.ReferenceChoice.NONE);
@@ -209,6 +233,7 @@ public class SetupActivity extends Activity {
     private void chooseReference(SetupFlow.ReferenceChoice choice) {
         if (choice == SetupFlow.ReferenceChoice.NONE) {
             ThemeConfig.prefs(this).edit().remove(ThemeConfig.KEY_CITY_INDEX).apply();
+            setReferenceMode(this, NavigationReference.Mode.NONE);
             flow.onLocationPermissionResult(false);
             saveConsents();
             render();
@@ -241,7 +266,9 @@ public class SetupActivity extends Activity {
     private void onLocationResult(boolean granted) {
         flow.onLocationPermissionResult(granted);
         saveConsents();
-        if (!granted) {
+        if (granted) {
+            setReferenceMode(this, NavigationReference.Mode.CURRENT_LOCATION);
+        } else {
             toast(I18n.tr(this, I18n.KEY_LOCATION_DENIED));
         }
         render();
@@ -337,8 +364,7 @@ public class SetupActivity extends Activity {
         SharedPreferences prefs = setupPrefs(this);
         EnumSet<SetupFlow.Feature> consents = EnumSet.noneOf(SetupFlow.Feature.class);
         for (SetupFlow.Feature feature : SetupFlow.Feature.values()) {
-            if (prefs.getBoolean(KEY_CONSENT_PREFIX + feature.name().toLowerCase(
-                    java.util.Locale.US), false)) {
+            if (prefs.getBoolean(consentKey(feature), false)) {
                 consents.add(feature);
             }
         }
@@ -348,8 +374,7 @@ public class SetupActivity extends Activity {
     private void saveConsents() {
         SharedPreferences.Editor editor = setupPrefs(this).edit();
         for (SetupFlow.Feature feature : SetupFlow.Feature.values()) {
-            editor.putBoolean(KEY_CONSENT_PREFIX + feature.name().toLowerCase(
-                    java.util.Locale.US), flow.isConsented(feature));
+            editor.putBoolean(consentKey(feature), flow.isConsented(feature));
         }
         editor.apply();
     }

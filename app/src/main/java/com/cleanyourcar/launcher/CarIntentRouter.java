@@ -52,6 +52,11 @@ public final class CarIntentRouter {
         LaunchResult launchPackage(String packageName);
     }
 
+    /** Shows the navigation HUD overlay; called only after a launch actually succeeded. */
+    public interface Overlay {
+        void show();
+    }
+
     /** A validated role selection, or the reason no app may be launched for the role. */
     public static final class ResolvedRole {
         public enum Unavailable {
@@ -246,6 +251,37 @@ public final class CarIntentRouter {
                 : opened;
     }
 
+    /** Opens the navigation app without a destination; the overlay follows only a launch. */
+    public static LaunchResult openNavigationApp(ResolvedRole navigation, Transport transport,
+            Overlay overlay) {
+        return showOverlayIfLaunched(launchRole(navigation, transport), overlay);
+    }
+
+    /** {@link #launchNavigation(ResolvedRole, PlusCodeCodec.LatLon, Transport)} plus overlay. */
+    public static LaunchResult launchNavigation(ResolvedRole navigation,
+            PlusCodeCodec.LatLon target, Transport transport, Overlay overlay) {
+        return showOverlayIfLaunched(launchNavigation(navigation, target, transport), overlay);
+    }
+
+    /**
+     * Opens an app from the grid. The overlay appears only when the app is the available
+     * navigation role's package and it actually launched.
+     */
+    public static LaunchResult launchGridApp(String packageName, ResolvedRole navigation,
+            Transport transport, Overlay overlay) {
+        LaunchResult result = transport.launchPackage(packageName);
+        boolean isNavigationApp = navigation != null && navigation.isAvailable()
+                && packageName.equals(navigation.selection.packageName);
+        return isNavigationApp ? showOverlayIfLaunched(result, overlay) : result;
+    }
+
+    private static LaunchResult showOverlayIfLaunched(LaunchResult result, Overlay overlay) {
+        if (result.isLaunched() && overlay != null) {
+            overlay.show();
+        }
+        return result;
+    }
+
     static String geoUri(PlusCodeCodec.LatLon target) {
         String coords = String.format(Locale.US, "%.6f,%.6f", target.lat, target.lon);
         String uri = "geo:" + coords + "?q=" + coords;
@@ -261,25 +297,36 @@ public final class CarIntentRouter {
 
     /** Opens the navigation app without a destination. */
     public static void launchGoogleMapsLive(Context context) {
-        startOverlayService(context);
-        LaunchResult result = launchRole(resolveRole(context, Role.NAVIGATION),
-                new AndroidTransport(context));
+        LaunchResult result = openNavigationApp(resolveRole(context, Role.NAVIGATION),
+                new AndroidTransport(context), overlay(context));
         toastFailure(context, result);
     }
 
     /** Sends a destination to the chosen navigation app and explains any blocked result. */
     public static LaunchResult launchNavigation(Context context, PlusCodeCodec.LatLon target) {
-        ResolvedRole resolved = resolveRole(context, Role.NAVIGATION);
-        if (resolved.isAvailable()) {
-            startOverlayService(context);
-        }
-        LaunchResult result = launchNavigation(resolved, target, new AndroidTransport(context));
+        LaunchResult result = launchNavigation(resolveRole(context, Role.NAVIGATION), target,
+                new AndroidTransport(context), overlay(context));
         if (result.reason == LaunchResult.Reason.DESTINATION_NOT_SENT) {
             toast(context, I18n.tr(context, I18n.KEY_DEST_NOT_SENT));
         } else {
             toastFailure(context, result);
         }
         return result;
+    }
+
+    /** Opens a grid app; the HUD overlay follows only a successful navigation-app launch. */
+    public static boolean launchGridApp(Context context, String packageName) {
+        return launchGridApp(packageName, resolveRole(context, Role.NAVIGATION),
+                new AndroidTransport(context), overlay(context)).isLaunched();
+    }
+
+    private static Overlay overlay(final Context context) {
+        return new Overlay() {
+            @Override
+            public void show() {
+                startOverlayService(context);
+            }
+        };
     }
 
     public static void startOverlayService(Context context) {

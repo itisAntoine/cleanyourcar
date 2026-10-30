@@ -253,6 +253,11 @@ public final class PlusCodeDialog {
             ThemeConfig.prefs(context).edit().remove(ThemeConfig.KEY_CITY_INDEX).apply();
         } else {
             ThemeConfig.prefs(context).edit().putInt(ThemeConfig.KEY_CITY_INDEX, index).apply();
+            // Picking a city here overrides an earlier "None"; current-location mode keeps it
+            // as the fallback.
+            if (SetupActivity.referenceMode(context) == NavigationReference.Mode.NONE) {
+                SetupActivity.setReferenceMode(context, NavigationReference.Mode.CITY);
+            }
         }
     }
 

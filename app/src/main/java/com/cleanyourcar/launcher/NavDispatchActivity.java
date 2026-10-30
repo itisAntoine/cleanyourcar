@@ -72,11 +72,17 @@ public class NavDispatchActivity extends Activity {
     }
 
     /**
-     * Reference for short Plus Codes: a fresh, accurate, permitted location fix, else the city
-     * the user saved explicitly, else none.
+     * Reference for short Plus Codes following the setup choice: a fresh, accurate location fix
+     * only in current-location mode with consent, else the city saved explicitly, else none.
+     * The "None" choice disables both.
      */
     static NavigationReference.ReferenceResult currentReference(Context context) {
-        return NavigationReference.resolve(locationSample(context),
+        NavigationReference.Mode mode = SetupActivity.referenceMode(context);
+        boolean consented = SetupActivity.isConsented(context, SetupFlow.Feature.CURRENT_LOCATION);
+        NavigationReference.LocationSample sample =
+                NavigationReference.usesLocation(mode, consented)
+                        ? locationSample(context) : NavigationReference.LocationSample.NONE;
+        return NavigationReference.resolve(mode, consented, sample,
                 ConfigurationStore.get(context).load(context).savedNavigationReference);
     }
 

@@ -33,31 +33,33 @@ public class RoleRoutingTest {
         final List<String> calls = new ArrayList<>();
         final List<String> viewUris = new ArrayList<>();
         final List<String> viewPackages = new ArrayList<>();
+        /** Result returned for every request; tests switch it to simulate a missing app. */
+        LaunchResult outcome = LaunchResult.launched();
 
         @Override
         public LaunchResult startView(String uri, String packageName) {
             calls.add("view " + uri + " " + packageName);
             viewUris.add(uri);
             viewPackages.add(packageName);
-            return LaunchResult.launched();
+            return outcome;
         }
 
         @Override
         public LaunchResult startAction(String action) {
             calls.add("action " + action);
-            return LaunchResult.launched();
+            return outcome;
         }
 
         @Override
         public LaunchResult launchComponent(String packageName, String className) {
             calls.add("component " + packageName + "/" + className);
-            return LaunchResult.launched();
+            return outcome;
         }
 
         @Override
         public LaunchResult launchPackage(String packageName) {
             calls.add("package " + packageName);
-            return LaunchResult.launched();
+            return outcome;
         }
     }
 
@@ -192,6 +194,63 @@ public class RoleRoutingTest {
         assertTrue(flow.isConsented(SetupFlow.Feature.HOME));
         assertEquals(SetupFlow.Entry.HOME, flow.entry());
         assertEquals(EnumSet.of(SetupFlow.Feature.HOME), flow.consentedFeatures());
+    }
+
+    /** Counts overlay requests so tests can prove the HUD only follows a real launch. */
+    private static final class FakeOverlay implements CarIntentRouter.Overlay {
+        int shown;
+
+        @Override
+        public void show() {
+            shown++;
+        }
+    }
+
+    @Test
+    public void navigationOverlayStartsOnlyAfterSuccessfulLaunch() throws IOException {
+        // Generic install with no navigation role: nothing launches and no overlay appears.
+        ResolvedRole unset = CarIntentRouter.resolveRole(newInstallStore().current(),
+                Role.NAVIGATION);
+        FakeTransport transport = new FakeTransport();
+        FakeOverlay overlay = new FakeOverlay();
+        assertEquals(LaunchResult.Reason.ROLE_UNAVAILABLE,
+                CarIntentRouter.openNavigationApp(unset, transport, overlay).reason);
+        assertEquals(LaunchResult.Reason.ROLE_UNAVAILABLE, CarIntentRouter.launchNavigation(
+                unset, BEN_THANH, transport, overlay).reason);
+        assertTrue(transport.calls.isEmpty());
+        assertEquals(0, overlay.shown);
+
+        ConfigurationStore store = newInstallStore();
+        store.setRole(Role.NAVIGATION, new RoleSelection("net.osmand", null, "geo", null));
+        ResolvedRole osmand = CarIntentRouter.resolveRole(store.current(), Role.NAVIGATION);
+
+        // The chosen app is missing: the launch fails and the overlay stays hidden.
+        FakeTransport missing = new FakeTransport();
+        missing.outcome = LaunchResult.failed(LaunchResult.Reason.NOT_FOUND);
+        assertFalse(CarIntentRouter.openNavigationApp(osmand, missing, overlay).isLaunched());
+        assertFalse(CarIntentRouter.launchNavigation(osmand, BEN_THANH, missing, overlay)
+                .isLaunched());
+        assertFalse(CarIntentRouter.launchGridApp("net.osmand", osmand, missing, overlay)
+                .isLaunched());
+        assertEquals(0, overlay.shown);
+
+        // Only real launches of the navigation app bring up the overlay.
+        FakeTransport working = new FakeTransport();
+        assertTrue(CarIntentRouter.openNavigationApp(osmand, working, overlay).isLaunched());
+        assertEquals(1, overlay.shown);
+        assertTrue(CarIntentRouter.launchNavigation(osmand, BEN_THANH, working, overlay)
+                .isLaunched());
+        assertEquals(2, overlay.shown);
+        assertTrue(CarIntentRouter.launchGridApp("net.osmand", osmand, working, overlay)
+                .isLaunched());
+        assertEquals(3, overlay.shown);
+
+        // Other grid apps, or any grid app when navigation is unset, never show the overlay.
+        assertTrue(CarIntentRouter.launchGridApp("com.example.music", osmand, working, overlay)
+                .isLaunched());
+        assertTrue(CarIntentRouter.launchGridApp("net.osmand", unset, working, overlay)
+                .isLaunched());
+        assertEquals(3, overlay.shown);
     }
 
     private static ConfigurationStore newInstallStore() throws IOException {
