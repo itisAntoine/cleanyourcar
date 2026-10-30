@@ -7,6 +7,8 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
 
+import com.cleanyourcar.launcher.config.ConfigurationStore;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -23,9 +25,9 @@ import java.util.Set;
  * (App Library hide/unhide & reorder, inspired by cleanyourtv).
  */
 public final class AppRepository {
-    private static final String KEY_SAVED_ORDER = "app_saved_order_csv";
-    private static final String KEY_HIDDEN_PKGS = "app_hidden_pkgs_set";
-    private static final String KEY_UNHIDDEN_PKGS = "app_unhidden_pkgs_set";
+    private static final String KEY_SAVED_ORDER = ThemeConfig.KEY_APP_SAVED_ORDER;
+    private static final String KEY_HIDDEN_PKGS = ThemeConfig.KEY_APP_HIDDEN_PACKAGES;
+    private static final String KEY_UNHIDDEN_PKGS = ThemeConfig.KEY_APP_UNHIDDEN_PACKAGES;
 
     // Default priority order & curated allowlist for essential car apps
     private static final List<String> DEFAULT_PRIORITY_ORDER = Arrays.asList(
@@ -38,10 +40,21 @@ public final class AppRepository {
             "com.android.settings"
     );
 
-    private static final Set<String> DEFAULT_ALLOWED_PACKAGES = new HashSet<>(DEFAULT_PRIORITY_ORDER);
+    private static final Set<String> DEFAULT_ALLOWED_PACKAGES =
+            Collections.unmodifiableSet(new HashSet<>(DEFAULT_PRIORITY_ORDER));
 
     public static boolean isPackageVisible(
             String packageName, Set<String> explicitlyHidden, Set<String> explicitlyUnhidden) {
+        return isPackageVisible(packageName, explicitlyHidden, explicitlyUnhidden,
+                DEFAULT_ALLOWED_PACKAGES);
+    }
+
+    /**
+     * @param defaultVisible packages visible without an explicit choice; null shows every
+     *                       discovered launchable app
+     */
+    public static boolean isPackageVisible(String packageName, Set<String> explicitlyHidden,
+            Set<String> explicitlyUnhidden, Set<String> defaultVisible) {
         if (packageName == null || packageName.isEmpty()) return false;
         if (explicitlyHidden != null && explicitlyHidden.contains(packageName)) {
             return false;
@@ -49,7 +62,17 @@ public final class AppRepository {
         if (explicitlyUnhidden != null && explicitlyUnhidden.contains(packageName)) {
             return true;
         }
-        return DEFAULT_ALLOWED_PACKAGES.contains(packageName);
+        return defaultVisible == null || defaultVisible.contains(packageName);
+    }
+
+    /** Curated car-app list for existing users; null (all discovered apps) for generic installs. */
+    public static Set<String> defaultVisiblePackages(boolean curatedAppVisibility) {
+        return curatedAppVisibility ? DEFAULT_ALLOWED_PACKAGES : null;
+    }
+
+    private static Set<String> defaultVisiblePackages(Context context) {
+        return defaultVisiblePackages(
+                ConfigurationStore.get(context).load(context).curatedAppVisibility);
     }
 
     public static final class AppEntry {
@@ -118,6 +141,7 @@ public final class AppRepository {
         Map<String, AppEntry> byPkg = new HashMap<>();
         Set<String> hidden = getHiddenPackages(context);
         Set<String> unhidden = getUnhiddenPackages(context);
+        Set<String> defaultVisible = defaultVisiblePackages(context);
         String selfPkg = context.getPackageName();
 
         if (resolved != null) {
@@ -128,7 +152,7 @@ public final class AppRepository {
                 CharSequence rawLabel = info.loadLabel(pm);
                 String label = getFriendlyVietnameseLabel(pkg, rawLabel != null ? rawLabel.toString() : pkg);
                 Drawable icon = info.loadIcon(pm);
-                boolean isVisible = isPackageVisible(pkg, hidden, unhidden);
+                boolean isVisible = isPackageVisible(pkg, hidden, unhidden, defaultVisible);
                 byPkg.put(pkg, new AppEntry(pkg, info.activityInfo.name, label, icon, !isVisible));
             }
         }
@@ -183,7 +207,8 @@ public final class AppRepository {
     public void toggleHidden(Context context, String packageName) {
         Set<String> hidden = getHiddenPackages(context);
         Set<String> unhidden = getUnhiddenPackages(context);
-        boolean currentlyVisible = isPackageVisible(packageName, hidden, unhidden);
+        boolean currentlyVisible = isPackageVisible(
+                packageName, hidden, unhidden, defaultVisiblePackages(context));
         if (currentlyVisible) {
             unhidden.remove(packageName);
             hidden.add(packageName);

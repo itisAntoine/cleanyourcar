@@ -1,0 +1,17 @@
+{
+  "theme_id": 2,
+  "glass_opacity": 3,
+  "language_id": 1,
+  "dock_left": false,
+  "swap_dashboard_columns": true,
+  "grid_columns": 5,
+  "plus_code_city_index": 3,
+  "pkg_maps": " com.waze ",
+  "pkg_bt_music": "com.example.btmusic",
+  "pkg_usb_music": "com.example.usbmusic",
+  "pkg_dashcam": "com.example.dashcam",
+  "pkg_equalizer": "com.example.equalizer",
+  "app_saved_order_csv": "com.waze, com.android.settings,,com.fvsm.camera",
+  "app_hidden_pkgs_set": ["com.acloud.stub.localradio", "com.android.settings"],
+  "app_unhidden_pkgs_set": ["com.spotify.music"]
+}

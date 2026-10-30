@@ -54,4 +54,24 @@ public class AppRepositoryOrderTest {
         assertTrue(AppRepository.isPackageVisible(
                 "com.spotify.music", hidden, unhidden));
     }
+
+    @Test
+    public void isPackageVisible_genericInstallShowsDiscoveredAppsUnlessHidden() {
+        Set<String> hidden = new HashSet<>(Collections.singletonList("com.acloud.stub.localradio"));
+        Set<String> unhidden = Collections.emptySet();
+
+        assertTrue(AppRepository.isPackageVisible(
+                "com.google.android.youtube", hidden, unhidden, null));
+        assertTrue(AppRepository.isPackageVisible(
+                "com.google.android.apps.maps", hidden, unhidden, null));
+        assertFalse(AppRepository.isPackageVisible(
+                "com.acloud.stub.localradio", hidden, unhidden, null));
+
+        Set<String> curated = AppRepository.defaultVisiblePackages(true);
+        assertFalse(AppRepository.isPackageVisible(
+                "com.google.android.youtube", hidden, unhidden, curated));
+        assertTrue(AppRepository.isPackageVisible(
+                "com.fvsm.camera", hidden, unhidden, curated));
+        assertNull(AppRepository.defaultVisiblePackages(false));
+    }
 }

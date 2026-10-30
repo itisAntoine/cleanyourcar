@@ -38,6 +38,11 @@ public final class ThemeConfig {
     public static final int OPACITY_FROSTED = 2;   // Deep frosted glass
     public static final int OPACITY_SOLID = 3;     // Near-opaque anti-glare
 
+    /**
+     * Legacy preference file; kept by name and never deleted. UI, app-library, and city keys
+     * remain stored here and are merged into
+     * {@link com.cleanyourcar.launcher.config.LauncherConfiguration} on load.
+     */
     public static final String PREFS_NAME = "carplay_launcher_prefs";
     public static final String KEY_THEME_ID = "theme_id";
     public static final String KEY_GLASS_OPACITY = "glass_opacity";
@@ -46,6 +51,14 @@ public final class ThemeConfig {
     public static final String KEY_SWAP_COLUMNS = "swap_dashboard_columns";
     public static final String KEY_GRID_COLUMNS = "grid_columns";
     public static final String KEY_CITY_INDEX = "plus_code_city_index";
+    public static final String KEY_APP_SAVED_ORDER = "app_saved_order_csv";
+    public static final String KEY_APP_HIDDEN_PACKAGES = "app_hidden_pkgs_set";
+    public static final String KEY_APP_UNHIDDEN_PACKAGES = "app_unhidden_pkgs_set";
+    /**
+     * Legacy role package overrides. Read once by the configuration migration; role choices
+     * are then read and written only through
+     * {@link com.cleanyourcar.launcher.config.ConfigurationStore}.
+     */
     public static final String KEY_PKG_MAPS = "pkg_maps";
     public static final String KEY_PKG_BT_MUSIC = "pkg_bt_music";
     public static final String KEY_PKG_USB_MUSIC = "pkg_usb_music";

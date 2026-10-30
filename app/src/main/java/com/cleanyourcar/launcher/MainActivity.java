@@ -311,7 +311,7 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
         if (iconId == VectorIcons.ICON_GOOGLE_MAPSPIN) {
             try {
                 String mapsPkg = CarIntentRouter.getTargetPackage(
-                        this, ThemeConfig.KEY_PKG_MAPS, CarIntentRouter.PKG_GOOGLE_MAPS);
+                        this, com.cleanyourcar.launcher.config.RoleSelection.Role.NAVIGATION);
                 android.graphics.drawable.Drawable realIcon = getPackageManager().getApplicationIcon(mapsPkg);
                 if (realIcon != null) {
                     ImageView iv = new ImageView(this);
@@ -657,7 +657,7 @@ public class MainActivity extends Activity implements HeadUnitMediaBridge.Listen
         if (iconId == VectorIcons.ICON_GOOGLE_MAPSPIN) {
             try {
                 String mapsPkg = CarIntentRouter.getTargetPackage(
-                        this, ThemeConfig.KEY_PKG_MAPS, CarIntentRouter.PKG_GOOGLE_MAPS);
+                        this, com.cleanyourcar.launcher.config.RoleSelection.Role.NAVIGATION);
                 android.graphics.drawable.Drawable realIcon = getPackageManager().getApplicationIcon(mapsPkg);
                 if (realIcon != null) {
                     ImageView iv = new ImageView(this);

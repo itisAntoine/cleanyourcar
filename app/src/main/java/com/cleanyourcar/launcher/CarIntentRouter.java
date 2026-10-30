@@ -8,12 +8,18 @@ import android.net.Uri;
 import android.provider.Settings;
 import android.widget.Toast;
 
+import com.cleanyourcar.launcher.config.ConfigurationStore;
+import com.cleanyourcar.launcher.config.LauncherConfiguration;
+import com.cleanyourcar.launcher.config.RoleSelection;
+import com.cleanyourcar.launcher.config.RoleSelection.Role;
+
+import java.io.IOException;
 import java.util.Locale;
 
 /**
  * Routes user actions to the head unit's target apps (Google Maps, Bluetooth Music, USB Music,
- * Front Dashcam, Equalizer/DSP, Brightness, and Night Clock), with user-customizable package
- * overrides in SharedPreferences and graceful fallbacks on standard Android devices/emulators.
+ * Front Dashcam, Equalizer/DSP, Brightness, and Night Clock). Role apps are resolved through
+ * {@link ConfigurationStore}, with graceful fallbacks on standard Android devices/emulators.
  */
 public final class CarIntentRouter {
     public static final String PKG_GOOGLE_MAPS = "com.google.android.apps.maps";
@@ -31,25 +37,35 @@ public final class CarIntentRouter {
     private CarIntentRouter() {
     }
 
-    public static String getTargetPackage(Context context, String prefKey, String defaultPkg) {
-        String custom = ThemeConfig.prefs(context).getString(prefKey, null);
-        if (custom != null && !custom.trim().isEmpty()) {
-            return custom.trim();
-        }
-        return defaultPkg;
+    /** Effective app for a role: user override, then accepted profile, then built-in default. */
+    public static RoleSelection resolveRole(Context context, Role role) {
+        return ConfigurationStore.get(context).load(context).roles.get(role);
     }
 
-    public static void setTargetPackage(Context context, String prefKey, String packageName) {
-        if (packageName == null || packageName.trim().isEmpty()) {
-            ThemeConfig.prefs(context).edit().remove(prefKey).apply();
-        } else {
-            ThemeConfig.prefs(context).edit().putString(prefKey, packageName.trim()).apply();
+    public static String getTargetPackage(Context context, Role role) {
+        return resolveRole(context, role).packageName;
+    }
+
+    /** Stores an explicit user choice; a blank package clears it. Returns false if not saved. */
+    public static boolean setTargetPackage(Context context, Role role, String packageName) {
+        ConfigurationStore store = ConfigurationStore.get(context);
+        store.load(context);
+        try {
+            if (packageName == null || packageName.trim().isEmpty()) {
+                store.setRole(role, null);
+            } else {
+                String strategy = role == Role.NAVIGATION ? "google-navigation" : "launch-package";
+                store.setRole(role, new RoleSelection(packageName, null, strategy, null));
+            }
+            return true;
+        } catch (IOException | RuntimeException e) {
+            return false;
         }
     }
 
     public static void launchGoogleMapsLive(Context context) {
         startOverlayService(context);
-        String mapsPkg = getTargetPackage(context, ThemeConfig.KEY_PKG_MAPS, PKG_GOOGLE_MAPS);
+        String mapsPkg = getTargetPackage(context, Role.NAVIGATION);
         if (launchPackage(context, mapsPkg)) {
             return;
         }
@@ -64,7 +80,7 @@ public final class CarIntentRouter {
 
     public static void launchCoordinatesInMapsLive(Context context, double lat, double lon, String label) {
         startOverlayService(context);
-        String mapsPkg = getTargetPackage(context, ThemeConfig.KEY_PKG_MAPS, PKG_GOOGLE_MAPS);
+        String mapsPkg = getTargetPackage(context, Role.NAVIGATION);
 
         try {
             String navUri = String.format(Locale.US, "google.navigation:q=%.6f,%.6f", lat, lon);
@@ -108,8 +124,9 @@ public final class CarIntentRouter {
 
     public static void launchDashcam(Context context) {
         stopOverlayService(context);
-        String pkg = getTargetPackage(context, ThemeConfig.KEY_PKG_DASHCAM, PKG_DASHCAM);
-        if (PKG_DASHCAM.equals(pkg) && launchExplicit(context, PKG_DASHCAM, CLS_DASHCAM_MAIN)) {
+        RoleSelection selection = resolveRole(context, Role.DASHCAM);
+        String pkg = selection.packageName;
+        if (launchRoleComponent(context, Role.DASHCAM, selection)) {
             return;
         }
         if (launchPackage(context, pkg)) {
@@ -120,7 +137,8 @@ public final class CarIntentRouter {
 
     public static void launchEqualizer(Context context) {
         stopOverlayService(context);
-        String pkg = getTargetPackage(context, ThemeConfig.KEY_PKG_EQUALIZER, PKG_EQUALIZER);
+        RoleSelection selection = resolveRole(context, Role.EQUALIZER);
+        String pkg = selection.packageName;
         if (PKG_EQUALIZER.equals(pkg)) {
             try {
                 Intent aps = new Intent(ACTION_XY_APS);
@@ -129,7 +147,7 @@ public final class CarIntentRouter {
                 return;
             } catch (Exception ignored) {
             }
-            if (launchExplicit(context, PKG_EQUALIZER, CLS_EQUALIZER_APS)) {
+            if (launchRoleComponent(context, Role.EQUALIZER, selection)) {
                 return;
             }
         }
@@ -148,15 +166,17 @@ public final class CarIntentRouter {
 
     public static void launchMusicSourceApp(Context context, int source) {
         if (source == HeadUnitMediaBridge.SOURCE_USB) {
-            String pkg = getTargetPackage(context, ThemeConfig.KEY_PKG_USB_MUSIC, PKG_USB_MUSIC);
-            if (PKG_USB_MUSIC.equals(pkg) && launchExplicit(context, PKG_USB_MUSIC, CLS_USB_MAIN)) {
+            RoleSelection selection = resolveRole(context, Role.LOCAL_MUSIC);
+            String pkg = selection.packageName;
+            if (launchRoleComponent(context, Role.LOCAL_MUSIC, selection)) {
                 return;
             }
             if (launchPackage(context, pkg)) return;
             Toast.makeText(context, "Không tìm thấy ứng dụng Nhạc USB (" + pkg + ")", Toast.LENGTH_SHORT).show();
         } else {
-            String pkg = getTargetPackage(context, ThemeConfig.KEY_PKG_BT_MUSIC, PKG_BT_MUSIC);
-            if (PKG_BT_MUSIC.equals(pkg) && launchExplicit(context, PKG_BT_MUSIC, CLS_BT_MAIN)) {
+            RoleSelection selection = resolveRole(context, Role.BLUETOOTH_MUSIC);
+            String pkg = selection.packageName;
+            if (launchRoleComponent(context, Role.BLUETOOTH_MUSIC, selection)) {
                 return;
             }
             if (launchPackage(context, pkg)) return;
@@ -219,6 +239,26 @@ public final class CarIntentRouter {
         } catch (Exception ignored) {
         }
         return false;
+    }
+
+    /**
+     * Launches the selection's component, or the built-in component when the selection names
+     * the built-in package without one. The component must belong to the selected package.
+     */
+    private static boolean launchRoleComponent(Context context, Role role, RoleSelection selection) {
+        String flattened = selection.componentName;
+        RoleSelection builtIn = LauncherConfiguration.builtInRole(role);
+        if (flattened == null && builtIn.packageName.equals(selection.packageName)) {
+            flattened = builtIn.componentName;
+        }
+        if (flattened == null) {
+            return false;
+        }
+        ComponentName component = ComponentName.unflattenFromString(flattened);
+        if (component == null || !selection.packageName.equals(component.getPackageName())) {
+            return false;
+        }
+        return launchExplicit(context, component.getPackageName(), component.getClassName());
     }
 
     public static boolean launchExplicit(Context context, String packageName, String className) {
