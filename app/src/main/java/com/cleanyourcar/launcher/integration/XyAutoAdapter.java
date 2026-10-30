@@ -170,6 +170,15 @@ public final class XyAutoAdapter implements HeadUnitAdapter {
         return ADAPTER_ID;
     }
 
+    /**
+     * The vendor broadcast list has no verified initial-state query or resynchronization, so a
+     * missing exit event cannot prove reverse is inactive; HUD stays unavailable on XYAuto.
+     */
+    @Override
+    public ReverseSupport reverseSupport() {
+        return ReverseSupport.UNVERIFIED_EVENTS;
+    }
+
     @Override
     public void start(Context context, Listener listener) {
         if (started) {

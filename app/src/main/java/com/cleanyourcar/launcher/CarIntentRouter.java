@@ -14,6 +14,8 @@ import com.cleanyourcar.launcher.config.LauncherConfiguration;
 import com.cleanyourcar.launcher.config.RoleSelection;
 import com.cleanyourcar.launcher.config.RoleSelection.Role;
 
+import com.cleanyourcar.launcher.integration.IntegrationController;
+
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
@@ -320,13 +322,51 @@ public final class CarIntentRouter {
                 new AndroidTransport(context), overlay(context)).isLaunched();
     }
 
-    private static Overlay overlay(final Context context) {
+    /** Evaluates a HUD request; the decision source is {@link HudSessionPolicy#requestShow}. */
+    interface HudGate {
+        HudSessionPolicy.Decision requestShow();
+
+        void explainDenial(HudSessionPolicy.Reason reason);
+    }
+
+    /**
+     * Starts the HUD only when the session policy grants it; otherwise navigation stays full
+     * screen and the denial is explained.
+     */
+    static Overlay gatedOverlay(final HudGate gate, final Overlay start) {
         return new Overlay() {
+            @Override
+            public void show() {
+                HudSessionPolicy.Decision decision = gate.requestShow();
+                if (decision.isShow()) {
+                    start.show();
+                } else if (decision.action == HudSessionPolicy.Action.DENY) {
+                    gate.explainDenial(decision.reason);
+                }
+            }
+        };
+    }
+
+    private static Overlay overlay(final Context context) {
+        return gatedOverlay(new HudGate() {
+            @Override
+            public HudSessionPolicy.Decision requestShow() {
+                return OverlayHudService.newPolicy(context).requestShow(
+                        OverlayHudService.currentHudStatus(context),
+                        IntegrationController.processReverseState(),
+                        OverlayHudService.isMapLayoutVerified(context));
+            }
+
+            @Override
+            public void explainDenial(HudSessionPolicy.Reason reason) {
+                OverlayHudService.explainDenial(context, reason);
+            }
+        }, new Overlay() {
             @Override
             public void show() {
                 startOverlayService(context);
             }
-        };
+        });
     }
 
     public static void startOverlayService(Context context) {

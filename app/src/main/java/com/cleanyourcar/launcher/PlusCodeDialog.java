@@ -38,6 +38,8 @@ public final class PlusCodeDialog {
     private static final int MAX_CODE_LENGTH = 11;
 
     private static Dialog activeDialog;
+    /** The active dialog is an overlay window shown from the HUD. */
+    private static boolean activeFromOverlay;
 
     private PlusCodeDialog() {
     }
@@ -51,6 +53,17 @@ public final class PlusCodeDialog {
             } catch (Throwable ignored) {
             }
             activeDialog = null;
+            activeFromOverlay = false;
+        }
+    }
+
+    /**
+     * Dismisses the keypad only when it was opened from the HUD as an overlay window; used when
+     * a HUD session closes (reverse, invalidation, denial) so no overlay dialog outlives it.
+     */
+    public static void dismissOverlayDialog() {
+        if (activeFromOverlay) {
+            dismissActive();
         }
     }
 
@@ -59,6 +72,7 @@ public final class PlusCodeDialog {
         final ThemeConfig.Palette p = ThemeConfig.getActivePalette(context);
         final Dialog dialog = new Dialog(context);
         activeDialog = dialog;
+        activeFromOverlay = fromOverlay;
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         if (fromOverlay && dialog.getWindow() != null) {
             int type = (android.os.Build.VERSION.SDK_INT >= 26)

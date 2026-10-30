@@ -18,6 +18,22 @@ public interface HeadUnitAdapter {
 
     CommandResult execute(MediaCommand command);
 
+    /** How far this adapter's reverse state can be trusted for gating the HUD. */
+    ReverseSupport reverseSupport();
+
+    enum ReverseSupport {
+        /** The adapter receives no reverse signal; reverse stays UNKNOWN. */
+        NONE,
+        /**
+         * Reverse enter/exit events are forwarded (and still remove overlays), but no verified
+         * mechanism establishes the initial state or resynchronizes it, so the HUD stays
+         * unavailable on this adapter.
+         */
+        UNVERIFIED_EVENTS,
+        /** Initial state and resynchronization were verified on the device. */
+        VERIFIED
+    }
+
     enum MediaCommand { PLAY_PAUSE, NEXT, PREVIOUS, SELECT_BLUETOOTH, SELECT_LOCAL }
 
     enum Health { HEALTHY, FAILED }

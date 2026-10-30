@@ -217,6 +217,24 @@ public class IntegrationControllerTest {
     }
 
     @Test
+    public void shippedAdapters_neverClaimVerifiedReverseButKeepMediaFeatures() {
+        FakeBroadcastTransport broadcasts = new FakeBroadcastTransport();
+        IntegrationController xyauto = controller(XYAUTO, broadcasts,
+                new FakeMediaKeyTransport(), true);
+        assertEquals(HeadUnitAdapter.ReverseSupport.UNVERIFIED_EVENTS, xyauto.reverseSupport());
+        assertEquals(HeadUnitAdapter.ReverseSupport.NONE,
+                controller(GENERIC, new FakeBroadcastTransport(), new FakeMediaKeyTransport(),
+                        true).reverseSupport());
+
+        // HUD unavailability does not disable XYAuto media commands or source selection.
+        xyauto.start(null, new RecordingListener());
+        assertEquals(HeadUnitAdapter.CommandResult.Status.SENT,
+                xyauto.execute(HeadUnitAdapter.MediaCommand.PLAY_PAUSE).status);
+        assertEquals(HeadUnitAdapter.CommandResult.Status.SENT,
+                xyauto.execute(HeadUnitAdapter.MediaCommand.SELECT_LOCAL).status);
+    }
+
+    @Test
     public void missingPlaybackExtraDoesNotToggleState() {
         MediaState playing = MediaState.unknown().withPlayback(MediaState.Playback.PLAYING);
         MediaState afterMissing = XyAutoAdapter.applyBroadcast(playing,

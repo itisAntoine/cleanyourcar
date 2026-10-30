@@ -1,6 +1,8 @@
 package com.cleanyourcar.launcher;
 
 import android.app.Service;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.Intent;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
@@ -16,12 +18,22 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import com.cleanyourcar.launcher.compat.CapabilityRegistry;
+import com.cleanyourcar.launcher.compat.EnvironmentFacts;
+import com.cleanyourcar.launcher.config.ConfigurationStore;
+import com.cleanyourcar.launcher.config.LauncherConfiguration;
 
 import com.cleanyourcar.launcher.integration.HeadUnitAdapter;
 import com.cleanyourcar.launcher.integration.IntegrationController;
 import com.cleanyourcar.launcher.integration.MediaState;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Date;
 import java.util.Locale;
 
@@ -29,7 +41,8 @@ import java.util.Locale;
  * State 2 (Expanded) & State 3 (Collapsed): Live Google Maps Frame Overlay Service.
  * Keeps ONLY the Right Music-Only Card (or collapsed pill) on the right side so Google Maps'
  * left-side menu, search bar, and back buttons are 100% unobstructed, and yields 100% of the
- * screen immediately when Reverse gear (R) is engaged.
+ * screen when Reverse gear (R) is engaged. Every session is gated by {@link HudSessionPolicy}
+ * (fail-closed); maps are never resized through system shell commands.
  */
 public class OverlayHudService extends Service implements HeadUnitAdapter.Listener {
     public static final String ACTION_SHOW_EXPANDED = "com.cleanyourcar.launcher.OVERLAY_SHOW_EXPANDED";
@@ -40,43 +53,22 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         return HeadUnitMediaBridge.isReverseEnterAction(action);
     }
 
+    /** Window visibility derived from {@link HudSessionPolicy} decisions only. */
     public static final class StateMachine {
         private boolean active;
         private boolean collapsed;
-        private boolean inReverse;
 
-        public void onCommand(String action) {
-            if (ACTION_HIDE.equals(action)) {
-                active = false;
-            } else if (ACTION_SHOW_COLLAPSED.equals(action)) {
-                active = true;
-                collapsed = true;
-            } else if (ACTION_SHOW_EXPANDED.equals(action)) {
+        public void apply(HudSessionPolicy.Decision decision) {
+            if (decision.action == HudSessionPolicy.Action.SHOW_EXPANDED) {
                 active = true;
                 collapsed = false;
+            } else if (decision.action == HudSessionPolicy.Action.SHOW_COLLAPSED) {
+                active = true;
+                collapsed = true;
+            } else {
+                active = false;
+                collapsed = false;
             }
-        }
-
-        public void onReverseGear(boolean reverse) {
-            this.inReverse = reverse;
-        }
-
-        /**
-         * Applies an adapter reverse state and returns whether window visibility must be
-         * re-synced. UNKNOWN is ignored: it keeps the last known reverse state, so the HUD stays
-         * visible while reverse is UNKNOWN. Fail-closed HUD gating for UNKNOWN reverse is
-         * implemented in a later task.
-         */
-        public boolean onReverseState(MediaState.ReverseState state) {
-            if (state == MediaState.ReverseState.ACTIVE) {
-                inReverse = true;
-                return true;
-            }
-            if (state == MediaState.ReverseState.INACTIVE) {
-                inReverse = false;
-                return true;
-            }
-            return false;
         }
 
         public boolean isActive() {
@@ -92,23 +84,124 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         }
 
         public boolean shouldShowExpandedRightCard() {
-            return active && !inReverse && !collapsed;
+            return active && !collapsed;
         }
 
         public boolean shouldShowCollapsedPill() {
-            return active && !inReverse && collapsed;
-        }
-
-        public String computeOverscanSpec(boolean dockLeft) {
-            if (!active || inReverse || collapsed) {
-                return "0,0,0,0";
-            }
-            return "0,0,260,0";
+            return active && collapsed;
         }
     }
 
+    /**
+     * Current status of the HUD ({@link CapabilityRegistry.Capability#OVERLAY}) capability. No
+     * local HUD verification procedure exists yet, so availability is UNKNOWN and evidence is
+     * untested: the status is never READY and a profile claim alone cannot change that.
+     */
+    public static CapabilityRegistry.CapabilityStatus currentHudStatus(Context context) {
+        Map<String, String> current = new HashMap<>();
+        List<String> blockers = new ArrayList<>();
+        boolean permitted = canDrawOverlays(context);
+        current.put(CapabilityRegistry.KEY_ENVIRONMENT, invalidationKey(context));
+        current.put(CapabilityRegistry.KEY_PERMISSION_OVERLAY, permitted ? "granted" : "denied");
+        if (!permitted) {
+            blockers.add(CapabilityRegistry.KEY_PERMISSION_OVERLAY);
+        }
+        return CapabilityRegistry.evaluate(CapabilityRegistry.Capability.OVERLAY,
+                CapabilityRegistry.Evidence.untested(),
+                new CapabilityRegistry.RuntimeConditions(CapabilityRegistry.Availability.UNKNOWN,
+                        current, blockers, false, false));
+    }
+
+    /** No verified map-layout procedure exists yet; navigation opens full screen. */
+    public static boolean isMapLayoutVerified(Context context) {
+        return false;
+    }
+
+    public static boolean canDrawOverlays(Context context) {
+        return Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(context);
+    }
+
+    /** Policy for the current platform and the configured adapter's reverse support. */
+    public static HudSessionPolicy newPolicy(Context context) {
+        return new HudSessionPolicy(EnvironmentFacts.collect(context).platform,
+                IntegrationController.create(context).reverseSupport());
+    }
+
+    /**
+     * Firmware/environment, configured adapter, and accepted safety-profile revision; a change
+     * while a session is open closes it.
+     */
+    static String invalidationKey(Context context) {
+        try {
+            LauncherConfiguration config = ConfigurationStore.get(context).load(context);
+            return EnvironmentFacts.collect(context).environmentKey() + "|"
+                    + IntegrationController.selectAdapterId(config.acceptedAdapterId,
+                            config.legacyXyAutoUser)
+                    + "|" + config.acceptedProfileId + "@" + config.acceptedProfileRevision;
+        } catch (RuntimeException e) {
+            return "unavailable";
+        }
+    }
+
+    /**
+     * Explains a HUD denial with an I18n message. The "paused until verified" notice is shown
+     * once to users who had the HUD before profiles (legacy XYAuto installs).
+     */
+    public static void explainDenial(Context context, HudSessionPolicy.Reason reason) {
+        boolean legacy;
+        try {
+            legacy = ConfigurationStore.get(context).load(context).legacyXyAutoUser;
+        } catch (RuntimeException e) {
+            legacy = false;
+        }
+        SharedPreferences prefs = context.getSharedPreferences(HUD_PREFS, MODE_PRIVATE);
+        boolean explained = prefs.getBoolean(KEY_PAUSE_EXPLAINED, false);
+        if (!HudSessionPolicy.shouldExplain(reason, legacy, explained)) {
+            return;
+        }
+        int key = HudSessionPolicy.messageKey(reason);
+        if (key == I18n.KEY_HUD_PAUSED) {
+            prefs.edit().putBoolean(KEY_PAUSE_EXPLAINED, true).apply();
+        }
+        Toast.makeText(context, I18n.tr(context, key), Toast.LENGTH_LONG).show();
+    }
+
+    private static final String HUD_PREFS = "cleanyourcar_hud";
+    private static final String KEY_PAUSE_EXPLAINED = "hudPauseExplained";
+
+    private final HudSessionPolicy.Surface surface = new HudSessionPolicy.Surface() {
+        @Override
+        public void removeOverlayWindows() {
+            removeAllWindows();
+        }
+
+        @Override
+        public void dismissOverlayDialogs() {
+            PlusCodeDialog.dismissOverlayDialog();
+        }
+
+        @Override
+        public void showExpanded() {
+            ensureWindowsBuilt();
+            syncWindowVisibility();
+        }
+
+        @Override
+        public void showCollapsed() {
+            ensureWindowsBuilt();
+            syncWindowVisibility();
+        }
+
+        @Override
+        public void explainDenial(HudSessionPolicy.Reason reason) {
+            OverlayHudService.explainDenial(OverlayHudService.this, reason);
+        }
+    };
+
     private final StateMachine stateMachine = new StateMachine();
     private IntegrationController integration;
+    private HudSessionPolicy policy;
+    private String sessionKey;
 
     private WindowManager windowManager;
     private View rightPanelView;
@@ -126,6 +219,9 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         super.onCreate();
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         integration = IntegrationController.create(this);
+        policy = new HudSessionPolicy(EnvironmentFacts.collect(this).platform,
+                integration.reverseSupport());
+        sessionKey = invalidationKey(this);
         integration.start(this, this);
     }
 
@@ -133,22 +229,51 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = (intent != null && intent.getAction() != null)
                 ? intent.getAction()
-                : ACTION_SHOW_EXPANDED;
-        stateMachine.onCommand(action);
+                : ACTION_HIDE;
+        HudSessionPolicy.Decision decision;
+        if (ACTION_SHOW_EXPANDED.equals(action)) {
+            sessionKey = invalidationKey(this);
+            decision = policy.requestShow(currentHudStatus(this), integration.reverseState(),
+                    isMapLayoutVerified(this));
+        } else if (ACTION_SHOW_COLLAPSED.equals(action)) {
+            decision = sessionStillValid() ? policy.requestCollapsed(true) : closedDecision();
+        } else {
+            decision = policy.hide();
+        }
+        apply(decision);
         if (!stateMachine.isActive()) {
-            removeAllWindows();
             stopSelf();
             return START_NOT_STICKY;
         }
-        ensureWindowsBuilt();
-        syncWindowVisibility();
         onMediaStateChanged(integration.mediaState());
-        return START_STICKY;
+        return START_NOT_STICKY;
+    }
+
+    private void apply(HudSessionPolicy.Decision decision) {
+        stateMachine.apply(decision);
+        HudSessionPolicy.apply(decision, surface);
+    }
+
+    /** Closes the session when the overlay permission or environment changed since it began. */
+    private boolean sessionStillValid() {
+        return canDrawOverlays(this) && invalidationKey(this).equals(sessionKey);
+    }
+
+    private HudSessionPolicy.Decision closedDecision() {
+        return canDrawOverlays(this) ? policy.onEnvironmentChanged() : policy.onPermissionRevoked();
+    }
+
+    /** Applies a user collapse/expand tap after rechecking that the session is still valid. */
+    private void requestCollapsed(boolean collapse) {
+        apply(sessionStillValid() ? policy.requestCollapsed(collapse) : closedDecision());
+        if (!stateMachine.isActive()) {
+            stopSelf();
+        }
     }
 
     @Override
     public void onDestroy() {
-        PlusCodeDialog.dismissActive();
+        PlusCodeDialog.dismissOverlayDialog();
         integration.stop();
         removeAllWindows();
         super.onDestroy();
@@ -159,13 +284,6 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         return null;
     }
 
-    private boolean canDrawOverlayWindows() {
-        if (Build.VERSION.SDK_INT >= 23) {
-            return Settings.canDrawOverlays(this);
-        }
-        return true;
-    }
-
     private int overlayWindowType() {
         return (Build.VERSION.SDK_INT >= 26)
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -173,7 +291,7 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
     }
 
     private void ensureWindowsBuilt() {
-        if (windowManager == null || !canDrawOverlayWindows()) return;
+        if (windowManager == null || !canDrawOverlays(this)) return;
         ThemeConfig.Palette p = ThemeConfig.getActivePalette(this);
 
         if (rightPanelView == null) {
@@ -213,7 +331,6 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
     }
 
     private void removeAllWindows() {
-        applySystemOverscan("0,0,0,0");
         if (windowManager == null) return;
         safeRemoveView(rightPanelView);
         safeRemoveView(collapsedPillView);
@@ -237,24 +354,10 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         if (collapsedPillView != null) {
             collapsedPillView.setVisibility(stateMachine.shouldShowCollapsedPill() ? View.VISIBLE : View.GONE);
         }
-        applySystemOverscan(stateMachine.computeOverscanSpec(true));
-    }
-
-    private void applySystemOverscan(final String spec) {
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    Runtime.getRuntime().exec(new String[] { "sh", "-c", "wm overscan " + spec });
-                } catch (Throwable ignored) {
-                }
-            }
-        }).start();
     }
 
     private void returnToHomeActivity() {
-        stateMachine.onCommand(ACTION_HIDE);
-        syncWindowVisibility();
+        apply(policy.hide());
         Intent home = new Intent(OverlayHudService.this, MainActivity.class);
         home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         startActivity(home);
@@ -311,8 +414,7 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         collapseBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                stateMachine.onCommand(ACTION_SHOW_COLLAPSED);
-                syncWindowVisibility();
+                requestCollapsed(true);
             }
         });
         header.addView(collapseBtn);
@@ -555,8 +657,7 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         expandBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                stateMachine.onCommand(ACTION_SHOW_EXPANDED);
-                syncWindowVisibility();
+                requestCollapsed(false);
             }
         });
 
@@ -604,18 +705,22 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
 
     @Override
     public void onReverseStateChanged(MediaState.ReverseState state) {
-        if (state == MediaState.ReverseState.ACTIVE) {
-            PlusCodeDialog.dismissActive();
+        if (!stateMachine.isActive()) {
+            // No session yet (adapter start publishes UNKNOWN before the first command) or
+            // already closed: still make sure no overlay window or overlay dialog remains.
+            HudSessionPolicy.apply(policy.onReverseState(state), surface);
+            return;
         }
-        // UNKNOWN (published on adapter start) must not sync: that would race the overscan
-        // applied by onStartCommand.
-        if (stateMachine.onReverseState(state)) {
-            syncWindowVisibility();
-        }
+        apply(policy.onReverseState(state));
+        stopSelf();
     }
 
     @Override
     public void onHealthChanged(HeadUnitAdapter.Health health, String reason) {
         MediaStateText.reportHealth(this, health, reason);
+        if (health == HeadUnitAdapter.Health.FAILED && stateMachine.isActive()) {
+            apply(policy.onIntegrationLost());
+            stopSelf();
+        }
     }
 }

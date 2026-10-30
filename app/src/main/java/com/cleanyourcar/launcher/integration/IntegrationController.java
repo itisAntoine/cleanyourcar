@@ -19,6 +19,8 @@ public final class IntegrationController {
         volatile MediaState media;
         /** User's last successfully sent source selection; never shown as reported state. */
         volatile MediaState.Source requestedSource;
+        /** Reverse state of the most recent live controller; UNKNOWN once it stops. */
+        volatile MediaState.ReverseState reverse = MediaState.ReverseState.UNKNOWN;
 
         Shared(MediaState media) {
             this.media = media;
@@ -96,6 +98,10 @@ public final class IntegrationController {
         return adapter.id();
     }
 
+    public HeadUnitAdapter.ReverseSupport reverseSupport() {
+        return adapter.reverseSupport();
+    }
+
     public void start(Context context, HeadUnitAdapter.Listener listener) {
         if (started) {
             return;
@@ -114,6 +120,7 @@ public final class IntegrationController {
             @Override
             public void onReverseStateChanged(MediaState.ReverseState state) {
                 reverseState = state;
+                shared.reverse = state == null ? MediaState.ReverseState.UNKNOWN : state;
                 if (uiListener != null) {
                     uiListener.onReverseStateChanged(state);
                 }
@@ -137,6 +144,7 @@ public final class IntegrationController {
         started = false;
         uiListener = null;
         reverseState = MediaState.ReverseState.UNKNOWN;
+        shared.reverse = MediaState.ReverseState.UNKNOWN;
         health = null;
     }
 
@@ -176,6 +184,14 @@ public final class IntegrationController {
 
     public MediaState.ReverseState reverseState() {
         return reverseState;
+    }
+
+    /**
+     * Reverse state reported to the most recent live controller in this process, or UNKNOWN
+     * when that controller stopped; a stale value is never kept as INACTIVE.
+     */
+    public static MediaState.ReverseState processReverseState() {
+        return PROCESS.reverse;
     }
 
     /** Null before start and after stop. */

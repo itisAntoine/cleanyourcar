@@ -38,6 +38,11 @@ public final class GenericAndroidAdapter implements HeadUnitAdapter {
     }
 
     @Override
+    public ReverseSupport reverseSupport() {
+        return ReverseSupport.NONE;
+    }
+
+    @Override
     public void start(Context context, Listener listener) {
         this.context = context;
         started = true;

@@ -279,4 +279,47 @@ public class RoleRoutingTest {
             }
         }, 1);
     }
+
+    @Test
+    public void navigationHudStartsOnlyWhenSessionPolicyGrantsIt() {
+        final List<HudSessionPolicy.Reason> explained = new ArrayList<>();
+        final HudSessionPolicy shipped = new HudSessionPolicy(
+                com.cleanyourcar.launcher.compat.EnvironmentFacts.PLATFORM_AFTERMARKET,
+                com.cleanyourcar.launcher.integration.HeadUnitAdapter.ReverseSupport
+                        .UNVERIFIED_EVENTS);
+        FakeOverlay start = new FakeOverlay();
+        CarIntentRouter.gatedOverlay(new CarIntentRouter.HudGate() {
+            @Override
+            public HudSessionPolicy.Decision requestShow() {
+                return shipped.requestShow(HudSessionPolicyTest.readyOverlay(),
+                        com.cleanyourcar.launcher.integration.MediaState.ReverseState.INACTIVE,
+                        true);
+            }
+
+            @Override
+            public void explainDenial(HudSessionPolicy.Reason reason) {
+                explained.add(reason);
+            }
+        }, start).show();
+        assertEquals(0, start.shown);
+        assertEquals(Collections.singletonList(HudSessionPolicy.Reason.REVERSE_NOT_VERIFIED),
+                explained);
+
+        final HudSessionPolicy verified = HudSessionPolicyTest.verifiedPolicy();
+        CarIntentRouter.gatedOverlay(new CarIntentRouter.HudGate() {
+            @Override
+            public HudSessionPolicy.Decision requestShow() {
+                return verified.requestShow(HudSessionPolicyTest.readyOverlay(),
+                        com.cleanyourcar.launcher.integration.MediaState.ReverseState.INACTIVE,
+                        true);
+            }
+
+            @Override
+            public void explainDenial(HudSessionPolicy.Reason reason) {
+                explained.add(reason);
+            }
+        }, start).show();
+        assertEquals(1, start.shown);
+        assertEquals(1, explained.size());
+    }
 }

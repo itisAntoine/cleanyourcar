@@ -106,6 +106,9 @@ public final class I18n {
     public static final int KEY_STRATEGY_OPEN = 80;
     public static final int KEY_PICK_APP = 81;
     public static final int KEY_PLATFORM = 82;
+    public static final int KEY_HUD_PAUSED = 83;
+    public static final int KEY_HUD_NO_PERMISSION = 84;
+    public static final int KEY_HUD_REVERSE = 85;
 
     private I18n() {
     }
@@ -379,6 +382,9 @@ public final class I18n {
             case KEY_STRATEGY_OPEN: return "Chỉ mở ứng dụng";
             case KEY_PICK_APP: return "Chọn ứng dụng";
             case KEY_PLATFORM: return "Nền tảng: %s";
+            case KEY_HUD_PAUSED: return "Khung nhạc trên bản đồ (HUD) đang tạm dừng cho đến khi máy này được kiểm tra camera lùi và bố cục bản đồ. Bản đồ mở toàn màn hình.";
+            case KEY_HUD_NO_PERMISSION: return "Khung nhạc trên bản đồ cần quyền hiển thị trên ứng dụng khác. Bản đồ mở toàn màn hình.";
+            case KEY_HUD_REVERSE: return "Khung nhạc trên bản đồ bị ẩn khi lùi xe hoặc khi chưa rõ trạng thái số lùi.";
             default: return "";
         }
     }
@@ -443,6 +449,9 @@ public final class I18n {
             case KEY_STRATEGY_OPEN: return "Open app only";
             case KEY_PICK_APP: return "Choose app";
             case KEY_PLATFORM: return "Platform: %s";
+            case KEY_HUD_PAUSED: return "The music frame over the map (HUD) is paused until this unit passes reverse-camera and map-layout checks. Maps opens full screen.";
+            case KEY_HUD_NO_PERMISSION: return "The music frame over the map needs the display-over-other-apps permission. Maps opens full screen.";
+            case KEY_HUD_REVERSE: return "The music frame over the map is hidden while reversing or when the reverse state is unknown.";
             default: return vi(key);
         }
     }
