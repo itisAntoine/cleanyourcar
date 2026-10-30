@@ -35,6 +35,7 @@ import org.junit.runner.RunWith;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -185,7 +186,7 @@ public class SetupCompatibilityTest {
     }
 
     @Test
-    public void restrictedRoleLaunchIsReportedWithoutBypassRoute() throws Exception {
+    public void restrictedRoleLaunchIsReportedWithoutBypassRouteOnAaos() throws Exception {
         ConfigurationStore legacy = new ConfigurationStore(
                 new ConfigurationStore.FileStorage(new File(dir, "legacy.json")), APP_VERSION);
         legacy.migrateLegacy(Collections.<String, Object>emptyMap(), true);
@@ -195,7 +196,7 @@ public class SetupCompatibilityTest {
                     QualificationSupport.targetContext());
             LaunchResult result = CarIntentRouter.launchRole(
                     CarIntentRouter.resolveRole(legacy.current(), role),
-                    new CarIntentRouter.AndroidTransport(restricted));
+                    new CarIntentRouter.AndroidTransport(restricted), true);
             assertSame(role + " was not reported as restricted",
                     LaunchResult.Reason.NOT_PERMITTED, result.reason);
             assertEquals(role + " tried another route after a restriction: " + restricted.started,
@@ -204,18 +205,34 @@ public class SetupCompatibilityTest {
     }
 
     @Test
-    public void restrictedSettingsScreenIsExplainedNotReplaced() {
+    public void restrictedSettingsScreenIsExplainedNotReplacedOnAaos() {
         final RestrictedContext restricted = new RestrictedContext(
                 QualificationSupport.targetContext());
         QualificationSupport.onMain(new Runnable() {
             @Override
             public void run() {
                 CarIntentRouter.launchSystemSettings(restricted,
-                        Settings.ACTION_BLUETOOTH_SETTINGS);
+                        Settings.ACTION_BLUETOOTH_SETTINGS, true);
             }
         });
         assertEquals(Collections.singletonList(Settings.ACTION_BLUETOOTH_SETTINGS),
                 restricted.started);
+    }
+
+    @Test
+    public void refusedSettingsScreenFallsBackOffAaos() {
+        // On aftermarket firmware a SecurityException means a protected panel, not a block.
+        final RestrictedContext refused = new RestrictedContext(
+                QualificationSupport.targetContext());
+        QualificationSupport.onMain(new Runnable() {
+            @Override
+            public void run() {
+                CarIntentRouter.launchSystemSettings(refused,
+                        Settings.ACTION_BLUETOOTH_SETTINGS, false);
+            }
+        });
+        assertEquals(Arrays.asList(Settings.ACTION_BLUETOOTH_SETTINGS, Settings.ACTION_SETTINGS),
+                refused.started);
     }
 
     private static void assertAcceptedProfileKept(ConfigurationStore store, File file,
@@ -260,7 +277,11 @@ public class SetupCompatibilityTest {
         }
     }
 
-    /** A context on which the system refuses every activity start, like an AAOS UX block. */
+    /**
+     * A context on which every activity start throws SecurityException. On AAOS this stands for
+     * a refused start; real AAOS UX restrictions more often launch and then swap in the
+     * system's ActivityBlockingActivity, which needs a physical AAOS run to observe.
+     */
     private static final class RestrictedContext extends ContextWrapper {
         final List<String> started = new ArrayList<>();
 

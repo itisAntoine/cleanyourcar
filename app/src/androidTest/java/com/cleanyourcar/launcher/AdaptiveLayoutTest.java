@@ -8,12 +8,15 @@ import static org.junit.Assume.assumeTrue;
 
 import android.annotation.TargetApi;
 import android.app.Dialog;
+import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.graphics.Insets;
 import android.graphics.Rect;
 import android.os.Build;
+import android.util.DisplayMetrics;
 import android.view.ContextThemeWrapper;
 import android.view.View;
 import android.view.Window;
@@ -29,6 +32,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.cleanyourcar.launcher.layout.LayoutPolicy;
 
 import org.junit.After;
+import org.junit.AssumptionViolatedException;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -46,6 +50,12 @@ import java.util.concurrent.Callable;
  * <p>Fixtures are applied as configuration overrides on top of the device's real window, so
  * they exercise the layout policy and the dialog bounding code with the fixture's size,
  * density and font scale. Physical-panel effects (cutouts, OEM bars) still need a device run.
+ *
+ * <p>A dialog window cannot be larger than the host window, so a window-backed fixture is only
+ * checked when the host activity window is at least the fixture's pixel size. Fixtures that do
+ * not fit are checked as far as possible and then the test is reported as skipped (assumption
+ * failure) naming them. Covering every fixture needs a host window of at least 1920x1280 px
+ * (for example a 2560x1600 tablet AVD); a 1024x600 AVD covers only the fixtures up to that size.
  */
 @RunWith(AndroidJUnit4.class)
 public class AdaptiveLayoutTest {
@@ -170,7 +180,12 @@ public class AdaptiveLayoutTest {
 
     @Test
     public void boundedDialogKeepsBottomActionReachableInEveryFixture() {
+        List<Fixture> skipped = new ArrayList<>();
         for (final Fixture fixture : FIXTURES) {
+            if (!hostFits(fixture)) {
+                skipped.add(fixture);
+                continue;
+            }
             final Dialog dialog = showTallDialog(fixture, true);
             try {
                 assertDialogWithinFixture(fixture, dialog, SetupUi.DIALOG_WIDTH_DP);
@@ -186,11 +201,17 @@ public class AdaptiveLayoutTest {
                 dismiss(ownScroller);
             }
         }
+        assumeAllFitted(skipped);
     }
 
     @Test
     public void plusCodeKeypadStaysReachableInEveryFixture() {
+        List<Fixture> skipped = new ArrayList<>();
         for (final Fixture fixture : FIXTURES) {
+            if (!hostFits(fixture)) {
+                skipped.add(fixture);
+                continue;
+            }
             Dialog keypad = QualificationSupport.onMain(new Callable<Dialog>() {
                 @Override
                 public Dialog call() throws Exception {
@@ -213,13 +234,19 @@ public class AdaptiveLayoutTest {
                 });
             }
         }
+        assumeAllFitted(skipped);
     }
 
     @Test
     @TargetApi(29)
     public void settingsDialogActionsStayReachableInEveryFixture() {
         assumeTrue("window inspection needs API 29", Build.VERSION.SDK_INT >= 29);
+        List<Fixture> skipped = new ArrayList<>();
         for (final Fixture fixture : FIXTURES) {
+            if (!hostFits(fixture)) {
+                skipped.add(fixture);
+                continue;
+            }
             final List<View> before = rootViews();
             QualificationSupport.onMain(new Runnable() {
                 @Override
@@ -232,7 +259,7 @@ public class AdaptiveLayoutTest {
                             });
                 }
             });
-            List<View> added = rootViews();
+            List<View> added = dialogDecors(rootViews());
             added.removeAll(before);
             assertEquals(fixture + ": settings dialog windows", 1, added.size());
             View decor = added.get(0);
@@ -243,6 +270,7 @@ public class AdaptiveLayoutTest {
                 closeWindow(decor);
             }
         }
+        assumeAllFitted(skipped);
     }
 
     @Test
@@ -268,11 +296,15 @@ public class AdaptiveLayoutTest {
     public void openDialogIsReboundedOnRotation() {
         final Fixture landscape = FIXTURES.get(1);
         final Fixture portrait = landscape.rotated();
+        assumeTrue("host window smaller than " + portrait,
+                hostFits(landscape) && hostFits(portrait));
         final List<LayoutPolicy.LayoutSpec> bounds = new ArrayList<>();
+        final RotatableContext[] host = new RotatableContext[1];
         final Dialog dialog = QualificationSupport.onMain(new Callable<Dialog>() {
             @Override
             public Dialog call() {
-                Dialog shown = new Dialog(fixtureContext(landscape));
+                host[0] = new RotatableContext(activity, landscape);
+                Dialog shown = new Dialog(host[0]);
                 AdaptiveUi.showBounded(shown, tallContent(shown.getContext()),
                         SETTINGS_DIALOG_WIDTH_DP, true, new AdaptiveUi.OnBoundsChanged() {
                             @Override
@@ -284,17 +316,24 @@ public class AdaptiveLayoutTest {
             }
         });
         try {
-            assertEquals(1, bounds.size());
-            final Configuration rotated = portrait.apply(
-                    activity.getResources().getConfiguration());
+            QualificationSupport.instrumentation().waitForIdleSync();
+            assertFalse(bounds.isEmpty());
+            assertEquals(landscape.heightDp() - 2 * LayoutPolicy.DIALOG_MARGIN_DP,
+                    bounds.get(bounds.size() - 1).dialogMaxHeightDp);
+            final int beforeRotation = bounds.size();
+            // The dialog's resources now report the rotated configuration, as after a real
+            // rotation, so the layout-change recheck agrees with the configuration callback.
             QualificationSupport.onMain(new Runnable() {
                 @Override
                 public void run() {
+                    Configuration rotated = host[0].rotateTo(portrait);
                     dialog.getWindow().getDecorView().dispatchConfigurationChanged(rotated);
                 }
             });
-            assertEquals("rotation did not re-bound the open dialog", 2, bounds.size());
-            LayoutPolicy.LayoutSpec spec = bounds.get(1);
+            QualificationSupport.instrumentation().waitForIdleSync();
+            assertTrue("rotation did not re-bound the open dialog",
+                    bounds.size() > beforeRotation);
+            LayoutPolicy.LayoutSpec spec = bounds.get(bounds.size() - 1);
             assertEquals(portrait.widthDp() - 2 * LayoutPolicy.DIALOG_MARGIN_DP,
                     spec.dialogWidthDp(SETTINGS_DIALOG_WIDTH_DP));
             assertEquals(portrait.heightDp() - 2 * LayoutPolicy.DIALOG_MARGIN_DP,
@@ -339,10 +378,23 @@ public class AdaptiveLayoutTest {
     @Test
     public void dialogStaysInsideSystemBarsUnderEdgeToEdge() {
         assumeTrue("edge-to-edge is enforced from API 35", Build.VERSION.SDK_INT >= 35);
-        Dialog dialog = showTallDialog(null, true);
+        final Dialog dialog = showTallDialog(null, true);
         try {
             assertDecorInsideVisibleArea(dialog);
             assertActionsReachable("edge-to-edge", dialog.getWindow().getDecorView());
+            // The policy itself must leave room for the bars, not only the window manager.
+            QualificationSupport.onMain(new Runnable() {
+                @Override
+                public void run() {
+                    LayoutPolicy.LayoutSpec spec = AdaptiveUi.specFor(dialog.getContext());
+                    float density = dialog.getContext().getResources()
+                            .getDisplayMetrics().density;
+                    int safeHeightDp = (int) (insetSafeArea().height() / density);
+                    assertTrue("dialog max height " + spec.dialogMaxHeightDp
+                                    + "dp exceeds the inset-safe height " + safeHeightDp + "dp",
+                            spec.dialogMaxHeightDp <= safeHeightDp);
+                }
+            });
         } finally {
             dismiss(dialog);
         }
@@ -353,20 +405,7 @@ public class AdaptiveLayoutTest {
         QualificationSupport.onMain(new Runnable() {
             @Override
             public void run() {
-                View activityDecor = activity.getWindow().getDecorView();
-                Rect safe = new Rect();
-                activityDecor.getGlobalVisibleRect(safe);
-                if (Build.VERSION.SDK_INT >= 30) {
-                    WindowInsets insets = activityDecor.getRootWindowInsets();
-                    if (insets != null) {
-                        Insets bars = insets.getInsets(WindowInsets.Type.systemBars()
-                                | WindowInsets.Type.displayCutout());
-                        safe.left += bars.left;
-                        safe.top += bars.top;
-                        safe.right -= bars.right;
-                        safe.bottom -= bars.bottom;
-                    }
-                }
+                Rect safe = insetSafeArea();
                 View content = dialog.getWindow().findViewById(Window.ID_ANDROID_CONTENT);
                 int[] location = new int[2];
                 content.getLocationOnScreen(location);
@@ -376,6 +415,83 @@ public class AdaptiveLayoutTest {
                         safe.contains(dialogRect));
             }
         });
+    }
+
+    /** Whether the host activity window can hold a dialog of the fixture's pixel size. */
+    private boolean hostFits(final Fixture fixture) {
+        return QualificationSupport.onMain(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                View decor = activity.getWindow().getDecorView();
+                return decor.getWidth() >= fixture.widthPx && decor.getHeight() >= fixture.heightPx;
+            }
+        });
+    }
+
+    private static void assumeAllFitted(List<Fixture> skipped) {
+        if (!skipped.isEmpty()) {
+            throw new AssumptionViolatedException("host window smaller than fixtures " + skipped
+                    + "; run on a host window of at least 1920x1280 px to cover them");
+        }
+    }
+
+    /** The activity window minus system bars and display cutout (main thread only). */
+    private Rect insetSafeArea() {
+        View activityDecor = activity.getWindow().getDecorView();
+        Rect safe = new Rect();
+        activityDecor.getGlobalVisibleRect(safe);
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsets insets = activityDecor.getRootWindowInsets();
+            if (insets != null) {
+                Insets bars = insets.getInsets(WindowInsets.Type.systemBars()
+                        | WindowInsets.Type.displayCutout());
+                safe.left += bars.left;
+                safe.top += bars.top;
+                safe.right -= bars.right;
+                safe.bottom -= bars.bottom;
+            }
+        }
+        return safe;
+    }
+
+    /**
+     * A themed context with its own Resources instance whose configuration can be switched in
+     * place. Dialog wraps its context and caches that Resources object, so updating it is what
+     * makes the dialog's later configuration reads see a rotation.
+     */
+    private static final class RotatableContext extends ContextThemeWrapper {
+        private final Resources resources;
+
+        @SuppressWarnings("deprecation")
+        RotatableContext(Context base, Fixture fixture) {
+            super(base, android.R.style.Theme_Material_NoActionBar);
+            Resources hostResources = base.getResources();
+            resources = new Resources(hostResources.getAssets(), metricsFor(hostResources, fixture),
+                    fixture.apply(hostResources.getConfiguration()));
+        }
+
+        @SuppressWarnings("deprecation")
+        Configuration rotateTo(Fixture fixture) {
+            Configuration config = fixture.apply(resources.getConfiguration());
+            resources.updateConfiguration(config, metricsFor(resources, fixture));
+            return config;
+        }
+
+        @Override
+        public Resources getResources() {
+            return resources;
+        }
+
+        private static DisplayMetrics metricsFor(Resources from, Fixture fixture) {
+            DisplayMetrics metrics = new DisplayMetrics();
+            metrics.setTo(from.getDisplayMetrics());
+            metrics.densityDpi = fixture.densityDpi;
+            metrics.density = fixture.densityDpi / 160f;
+            metrics.scaledDensity = metrics.density * fixture.fontScale;
+            metrics.widthPixels = fixture.widthPx;
+            metrics.heightPixels = fixture.heightPx;
+            return metrics;
+        }
     }
 
     private ContextThemeWrapper fixtureContext(Fixture fixture) {
@@ -491,6 +607,20 @@ public class AdaptiveLayoutTest {
                 return new ArrayList<>(WindowInspector.getGlobalWindowViews());
             }
         });
+    }
+
+    /** Only dialog decor windows: TYPE_APPLICATION windows that host a content frame. */
+    private static List<View> dialogDecors(List<View> roots) {
+        List<View> dialogs = new ArrayList<>();
+        for (View root : roots) {
+            if (root.getLayoutParams() instanceof WindowManager.LayoutParams
+                    && ((WindowManager.LayoutParams) root.getLayoutParams()).type
+                            == WindowManager.LayoutParams.TYPE_APPLICATION
+                    && root.findViewById(Window.ID_ANDROID_CONTENT) != null) {
+                dialogs.add(root);
+            }
+        }
+        return dialogs;
     }
 
     /** Closes a dialog window found by inspection (its Dialog object is not exposed). */

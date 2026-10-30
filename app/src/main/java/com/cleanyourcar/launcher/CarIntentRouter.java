@@ -9,6 +9,7 @@ import android.provider.Settings;
 import android.widget.Toast;
 
 import com.cleanyourcar.launcher.compat.DeviceProfile;
+import com.cleanyourcar.launcher.compat.EnvironmentFacts;
 import com.cleanyourcar.launcher.config.ConfigurationStore;
 import com.cleanyourcar.launcher.config.LauncherConfiguration;
 import com.cleanyourcar.launcher.config.RoleSelection;
@@ -203,11 +204,22 @@ public final class CarIntentRouter {
     }
 
     /**
-     * Opens the role's app using only its validated strategy. A route refused by the system
-     * (NOT_PERMITTED, e.g. an AAOS driving restriction) is reported as is; no other route is
-     * tried for the same request.
+     * Opens the role's app using only its validated strategy. On AAOS a refused route is
+     * reported as is (see {@link #launchRole(ResolvedRole, Transport, boolean)}); elsewhere
+     * the usual component and package fallbacks apply.
      */
     public static LaunchResult launchRole(ResolvedRole resolved, Transport transport) {
+        return launchRole(resolved, transport, stopsOnRestriction(transport));
+    }
+
+    /**
+     * With {@code stopOnRestriction} (AAOS only), a route refused by the system (NOT_PERMITTED)
+     * is reported as is and no other route is tried for the same request. Without it, a
+     * NOT_PERMITTED result usually means a non-exported or protected component on aftermarket
+     * firmware, so the next route is still tried.
+     */
+    static LaunchResult launchRole(ResolvedRole resolved, Transport transport,
+            boolean stopOnRestriction) {
         if (resolved == null || !resolved.isAvailable()) {
             return LaunchResult.blocked(LaunchResult.Reason.ROLE_UNAVAILABLE);
         }
@@ -218,19 +230,49 @@ public final class CarIntentRouter {
                         && PKG_EQUALIZER.equals(selection.packageName));
         if (xyAutoEqualizer) {
             result = transport.startAction(ACTION_XY_APS);
-            if (result.isLaunched() || isRestricted(result)) return result;
+            if (result.isLaunched() || stops(stopOnRestriction, result)) return result;
         }
         String[] component = componentFor(resolved);
         if (component != null) {
             result = transport.launchComponent(component[0], component[1]);
-            if (result.isLaunched() || isRestricted(result)) return result;
+            if (result.isLaunched() || stops(stopOnRestriction, result)) return result;
         }
-        return transport.launchPackage(selection.packageName);
+        if (stopOnRestriction) {
+            return transport.launchPackage(selection.packageName);
+        }
+        LaunchResult byPackage = transport.launchPackage(selection.packageName);
+        return byPackage.isLaunched() || result.reason != LaunchResult.Reason.NOT_PERMITTED
+                ? byPackage : result;
     }
 
-    /** The system refused the launch; it must be explained, never retried another way. */
+    /** The system refused the launch; on AAOS it must be explained, never retried. */
     static boolean isRestricted(LaunchResult result) {
         return result != null && result.reason == LaunchResult.Reason.NOT_PERMITTED;
+    }
+
+    private static boolean stops(boolean stopOnRestriction, LaunchResult result) {
+        return stopOnRestriction && isRestricted(result);
+    }
+
+    /**
+     * Whether refused launches must be explained instead of retried: true only on AAOS. A
+     * SecurityException elsewhere usually means a non-exported or protected component. Note
+     * that real AAOS UX restrictions usually let the launch succeed and then swap in the
+     * system's ActivityBlockingActivity rather than throwing; this rule covers the cases
+     * where the system does refuse the start.
+     */
+    static boolean stopsOnRestriction(Context context) {
+        try {
+            return EnvironmentFacts.PLATFORM_AAOS.equals(
+                    EnvironmentFacts.collect(context).platform);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    private static boolean stopsOnRestriction(Transport transport) {
+        return transport instanceof AndroidTransport
+                && stopsOnRestriction(((AndroidTransport) transport).context);
     }
 
     /**
@@ -308,7 +350,7 @@ public final class CarIntentRouter {
     public static void launchGoogleMapsLive(Context context) {
         LaunchResult result = openNavigationApp(resolveRole(context, Role.NAVIGATION),
                 new AndroidTransport(context), overlay(context));
-        toastFailure(context, result);
+        toastFailure(context, result, stopsOnRestriction(context));
     }
 
     /** Sends a destination to the chosen navigation app and explains any blocked result. */
@@ -318,7 +360,7 @@ public final class CarIntentRouter {
         if (result.reason == LaunchResult.Reason.DESTINATION_NOT_SENT) {
             toast(context, I18n.tr(context, I18n.KEY_DEST_NOT_SENT));
         } else {
-            toastFailure(context, result);
+            toastFailure(context, result, stopsOnRestriction(context));
         }
         return result;
     }
@@ -413,20 +455,26 @@ public final class CarIntentRouter {
 
     public static void launchDashcam(Context context) {
         stopOverlayService(context);
+        boolean stop = stopsOnRestriction(context);
         LaunchResult result = launchRole(resolveRole(context, Role.DASHCAM),
-                new AndroidTransport(context));
-        toastFailure(context, result);
+                new AndroidTransport(context), stop);
+        toastFailure(context, result, stop);
     }
 
     public static void launchEqualizer(Context context) {
         stopOverlayService(context);
+        launchEqualizer(context, stopsOnRestriction(context));
+    }
+
+    /** {@link #launchEqualizer(Context)} with the AAOS restriction rule given explicitly. */
+    static void launchEqualizer(Context context, boolean stopOnRestriction) {
         LaunchResult result = launchRole(resolveRole(context, Role.EQUALIZER),
-                new AndroidTransport(context));
+                new AndroidTransport(context), stopOnRestriction);
         if (result.isLaunched()) {
             return;
         }
-        if (isRestricted(result)) {
-            toastFailure(context, result);
+        if (stops(stopOnRestriction, result)) {
+            toastFailure(context, result, true);
             return;
         }
         // Standard Android audio panels are generic, not XYAuto defaults.
@@ -436,47 +484,68 @@ public final class CarIntentRouter {
             context.startActivity(eq);
             return;
         } catch (SecurityException e) {
-            toast(context, I18n.tr(context, I18n.KEY_SYSTEM_RESTRICTED));
-            return;
+            if (stopOnRestriction) {
+                toast(context, I18n.tr(context, I18n.KEY_SYSTEM_RESTRICTED));
+                return;
+            }
         } catch (Exception ignored) {
         }
-        launchSystemSettings(context, Settings.ACTION_SOUND_SETTINGS);
+        launchSystemSettings(context, Settings.ACTION_SOUND_SETTINGS, stopOnRestriction);
     }
 
     public static void launchMusicSourceApp(Context context, int source) {
+        launchMusicSourceApp(context, source, stopsOnRestriction(context));
+    }
+
+    /** {@link #launchMusicSourceApp(Context, int)} with the AAOS restriction rule given. */
+    static void launchMusicSourceApp(Context context, int source, boolean stopOnRestriction) {
         if (source == HeadUnitMediaBridge.SOURCE_USB) {
             LaunchResult result = launchRole(resolveRole(context, Role.LOCAL_MUSIC),
-                    new AndroidTransport(context));
-            toastFailure(context, result);
+                    new AndroidTransport(context), stopOnRestriction);
+            toastFailure(context, result, stopOnRestriction);
         } else {
             LaunchResult result = launchRole(resolveRole(context, Role.BLUETOOTH_MUSIC),
-                    new AndroidTransport(context));
-            if (isRestricted(result)) {
-                toastFailure(context, result);
+                    new AndroidTransport(context), stopOnRestriction);
+            if (stops(stopOnRestriction, result)) {
+                toastFailure(context, result, true);
             } else if (!result.isLaunched()) {
-                launchSystemSettings(context, Settings.ACTION_BLUETOOTH_SETTINGS);
+                launchSystemSettings(context, Settings.ACTION_BLUETOOTH_SETTINGS,
+                        stopOnRestriction);
             }
         }
     }
 
     /**
-     * Opens a settings panel. A missing panel falls back to the main settings screen; a panel
-     * refused by the system is explained and not replaced by another route.
+     * Opens a settings panel. A missing panel falls back to the main settings screen; on AAOS a
+     * panel refused by the system is explained and not replaced by another route.
      */
     public static void launchSystemSettings(Context context, String action) {
+        launchSystemSettings(context, action, stopsOnRestriction(context));
+    }
+
+    /** {@link #launchSystemSettings(Context, String)} with the AAOS restriction rule given. */
+    static void launchSystemSettings(Context context, String action, boolean stopOnRestriction) {
         try {
             Intent intent = new Intent(action);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(intent);
         } catch (SecurityException e) {
-            toast(context, I18n.tr(context, I18n.KEY_SYSTEM_RESTRICTED));
-        } catch (Exception e) {
-            try {
-                Intent fallback = new Intent(Settings.ACTION_SETTINGS);
-                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                context.startActivity(fallback);
-            } catch (Exception ignored) {
+            if (stopOnRestriction) {
+                toast(context, I18n.tr(context, I18n.KEY_SYSTEM_RESTRICTED));
+            } else {
+                openMainSettings(context);
             }
+        } catch (Exception e) {
+            openMainSettings(context);
+        }
+    }
+
+    private static void openMainSettings(Context context) {
+        try {
+            Intent fallback = new Intent(Settings.ACTION_SETTINGS);
+            fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(fallback);
+        } catch (Exception ignored) {
         }
     }
 
@@ -546,7 +615,9 @@ public final class CarIntentRouter {
         return new String[] {pkg, cls};
     }
 
-    private static void toastFailure(Context context, LaunchResult result) {
+    /** Explains a failed launch; NOT_PERMITTED reads as a system block only on AAOS. */
+    private static void toastFailure(Context context, LaunchResult result,
+            boolean stopOnRestriction) {
         if (result.isLaunched()) {
             return;
         }
@@ -559,7 +630,7 @@ public final class CarIntentRouter {
                 key = I18n.KEY_INVALID_DESTINATION;
                 break;
             case NOT_PERMITTED:
-                key = I18n.KEY_SYSTEM_RESTRICTED;
+                key = stopOnRestriction ? I18n.KEY_SYSTEM_RESTRICTED : I18n.KEY_APP_NOT_FOUND;
                 break;
             default:
                 key = I18n.KEY_APP_NOT_FOUND;

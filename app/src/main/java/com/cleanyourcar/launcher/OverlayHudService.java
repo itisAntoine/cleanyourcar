@@ -271,12 +271,23 @@ public class OverlayHudService extends Service implements HeadUnitAdapter.Listen
         }
     }
 
-    /** Stops this service after a session closed; instrumentation tests observe this call. */
+    /**
+     * Stops this service after a session closed.
+     *
+     * <p>Test seam: package-private so instrumentation tests can observe the stop request
+     * ({@link android.app.Service#stopSelf()} is final and a no-op on an instance the system did
+     * not start). Production behaviour is exactly {@code stopSelf()}; not part of any contract.
+     */
     void endService() {
         stopSelf();
     }
 
-    /** Whether any HUD overlay window is currently attached. */
+    /**
+     * Whether any HUD overlay window is currently attached.
+     *
+     * <p>Test seam: package-private, read only by instrumentation tests; not part of any
+     * contract.
+     */
     boolean hasOverlayWindows() {
         return rightPanelView != null || collapsedPillView != null;
     }

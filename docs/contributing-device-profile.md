@@ -15,7 +15,7 @@ it ready (see [compatibility.md](compatibility.md)).
 
 | Path | Purpose |
 |---|---|
-| [`profiles/schema.json`](../profiles/schema.json) | JSON Schema (format version 1). Every profile must validate against it. |
+| [`profiles/schema.json`](../profiles/schema.json) | JSON Schema (format version 1). The app validates profiles with its profile codec, whose rules mirror this schema. |
 | `profiles/devices/<profile-id>/profile.json` | Bundled profiles. Each directory is packaged as an app asset and offered as a candidate match. |
 | [`profiles/fixtures/`](../profiles/fixtures) | Valid and deliberately invalid samples used by the unit and instrumentation tests. |
 
@@ -119,9 +119,11 @@ or with standard read-only `adb shell getprop` queries, and copy only the needed
 
 1. Create `profiles/devices/<profile-id>/profile.json`. Use lowercase IDs such as
    `vendor-model`, and set `revision` to `1`.
-2. Validate the file against `profiles/schema.json`.
-3. Run the unit tests (`./gradlew :app:testDebugUnitTest`). They exercise the profile
-   codec against the schema rules.
+2. Check the file against `profiles/schema.json` with any JSON Schema (draft 2020-12)
+   validator, as a first pass.
+3. Run the unit tests (`./gradlew :app:testDebugUnitTest`). In the app, a profile is
+   validated by the app's profile codec (rules mirror `profiles/schema.json`), which also
+   enforces the cross-field rules the schema cannot express.
 4. If you have notes beyond `evidence.notes`, add `docs/devices/<profile-id>.md` and list it
    in `evidence.references`.
 5. Open a pull request with the following:

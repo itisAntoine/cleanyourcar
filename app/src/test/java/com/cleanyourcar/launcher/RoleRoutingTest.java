@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
@@ -254,21 +255,23 @@ public class RoleRoutingTest {
     }
 
     @Test
-    public void restrictedLaunchIsReportedWithoutTryingAnotherRoute() throws IOException {
+    public void restrictedLaunchIsReportedWithoutTryingAnotherRouteOnAaos() throws IOException {
         ConfigurationStore legacyStore = store();
         legacyStore.migrateLegacy(Collections.<String, Object>emptyMap(), true);
         FakeTransport restricted = new FakeTransport();
         restricted.outcome = LaunchResult.failed(LaunchResult.Reason.NOT_PERMITTED);
 
         LaunchResult dashcam = CarIntentRouter.launchRole(
-                CarIntentRouter.resolveRole(legacyStore.current(), Role.DASHCAM), restricted);
+                CarIntentRouter.resolveRole(legacyStore.current(), Role.DASHCAM), restricted,
+                true);
         assertEquals(LaunchResult.Reason.NOT_PERMITTED, dashcam.reason);
         assertEquals(Collections.singletonList("component " + CarIntentRouter.PKG_DASHCAM + "/"
                 + CarIntentRouter.CLS_DASHCAM_MAIN), restricted.calls);
 
         restricted.calls.clear();
         LaunchResult equalizer = CarIntentRouter.launchRole(
-                CarIntentRouter.resolveRole(legacyStore.current(), Role.EQUALIZER), restricted);
+                CarIntentRouter.resolveRole(legacyStore.current(), Role.EQUALIZER), restricted,
+                true);
         assertEquals(LaunchResult.Reason.NOT_PERMITTED, equalizer.reason);
         assertEquals(1, restricted.calls.size());
 
@@ -276,8 +279,38 @@ public class RoleRoutingTest {
         FakeTransport missing = new FakeTransport();
         missing.outcome = LaunchResult.failed(LaunchResult.Reason.NOT_FOUND);
         CarIntentRouter.launchRole(
-                CarIntentRouter.resolveRole(legacyStore.current(), Role.DASHCAM), missing);
+                CarIntentRouter.resolveRole(legacyStore.current(), Role.DASHCAM), missing, true);
         assertEquals(2, missing.calls.size());
+    }
+
+    @Test
+    public void refusedRouteStillFallsBackOffAaos() throws IOException {
+        ConfigurationStore legacyStore = store();
+        legacyStore.migrateLegacy(Collections.<String, Object>emptyMap(), true);
+
+        // On aftermarket firmware NOT_PERMITTED usually means a protected component.
+        FakeTransport refused = new FakeTransport();
+        refused.outcome = LaunchResult.failed(LaunchResult.Reason.NOT_PERMITTED);
+        LaunchResult dashcam = CarIntentRouter.launchRole(
+                CarIntentRouter.resolveRole(legacyStore.current(), Role.DASHCAM), refused,
+                false);
+        assertEquals(LaunchResult.Reason.NOT_PERMITTED, dashcam.reason);
+        assertEquals(Arrays.asList("component " + CarIntentRouter.PKG_DASHCAM + "/"
+                + CarIntentRouter.CLS_DASHCAM_MAIN, "package " + CarIntentRouter.PKG_DASHCAM),
+                refused.calls);
+
+        refused.calls.clear();
+        CarIntentRouter.launchRole(
+                CarIntentRouter.resolveRole(legacyStore.current(), Role.EQUALIZER), refused,
+                false);
+        assertEquals(3, refused.calls.size());
+        assertTrue(refused.calls.get(2).startsWith("package "));
+
+        // The public entry point with a test transport keeps the non-AAOS fallbacks.
+        refused.calls.clear();
+        CarIntentRouter.launchRole(
+                CarIntentRouter.resolveRole(legacyStore.current(), Role.DASHCAM), refused);
+        assertEquals(2, refused.calls.size());
     }
 
     @Test

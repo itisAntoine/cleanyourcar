@@ -85,6 +85,14 @@ AAOS support is limited to **parked use of a foreground app**:
     to the package launcher, or to a settings page.
   - Refused settings panels are explained rather than replaced by the main settings
     screen.
+  - This no-retry rule applies **only when the detected platform is AAOS**. On aftermarket
+    and other platforms a refused launch usually means a non-exported or protected
+    component, not a driving restriction, so the launcher keeps its fallback chain
+    (equalizer action, component, package; Bluetooth or other panels, then main settings)
+    and reports only "The chosen app could not be opened." when every route fails.
+  - Real AAOS UX restrictions usually do not throw at launch: the system starts the
+    activity and then swaps in its `ActivityBlockingActivity`. The refusal message covers
+    only the launches the system rejects outright.
 - **No vehicle claims.** Being able to install on AAOS does not prove access to HOME,
   overlays or vehicle data.
 - **HUD:** the HUD is never offered in AAOS mode.
@@ -175,8 +183,8 @@ only the bridge does, for local-network reception.
   The export leaves out validation keys, version identities, profile evidence, the saved
   location reference and unknown legacy data.
 - **Imported profiles:**
-  - They are data only: at most 64 KiB, validated against
-    [`profiles/schema.json`](../profiles/schema.json).
+  - They are data only: at most 64 KiB, validated by the app's profile codec (rules mirror
+    [`profiles/schema.json`](../profiles/schema.json)).
   - They are shown as a preview and applied only on confirmation.
   - A failed write keeps the previous configuration.
 
@@ -216,6 +224,10 @@ Qualification of this branch so far:
 - **Compiled only:** the instrumentation tests in `app/src/androidTest`
   (`SetupCompatibilityTest`, `AdaptiveLayoutTest`, `HudLifecycleTest`) are compiled in the
   build. They have **not yet been run** on any device or emulator.
+- **Host size for `AdaptiveLayoutTest`:** each layout fixture is simulated inside the test
+  activity's window, so the host window must be at least as large as the fixture (at least
+  1920x1280 px, for example a 2560x1600 tablet AVD). On a smaller host the fixtures that do
+  not fit are skipped and the test reports them as an assumption failure, not a pass.
 - **Unit tests:** JVM unit tests cover the policy logic.
 
 Before the matching claims can be made, the following is still needed:
@@ -223,7 +235,7 @@ Before the matching claims can be made, the following is still needed:
 | Claim | Missing evidence |
 |---|---|
 | Any device, including the emulator | A first run of the instrumentation suite (`./gradlew :app:connectedDebugAndroidTest`). |
-| XYAuto YT3518C vendor features | Physical validation on the unit:<ul><li>HOME return;</li><li>media routes;</li><li>reboot and ACC resume;</li><li>camera priority;</li><li>recovery;</li><li>power cycles;</li><li>the equalizer route, which now stops at a refused `xyaps` action instead of falling back.</li></ul> |
+| XYAuto YT3518C vendor features | Physical validation on the unit:<ul><li>HOME return;</li><li>media routes;</li><li>reboot and ACC resume;</li><li>camera priority;</li><li>recovery;</li><li>power cycles;</li><li>the equalizer fallback chain (`xyaps` action, component, package).</li></ul> |
 | Vendor-independent ("generic") media support | At least one materially different aftermarket firmware tested on real hardware. |
 | Any named AAOS OEM system | At least one physical, eligible AAOS system. Until then, the claim is limited to emulator-tested generic mode, and that run has not happened either. |
 | Dialog bounds under API 35 edge-to-edge and on a real rotation | A device run of `AdaptiveLayoutTest`. |

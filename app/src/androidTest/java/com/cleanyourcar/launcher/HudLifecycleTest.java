@@ -168,6 +168,14 @@ public class HudLifecycleTest {
     @Test
     public void routerDenyWhileShowingRemovesHud() throws Exception {
         service = showingService();
+        final Dialog keypad = QualificationSupport.onMain(new Callable<Dialog>() {
+            @Override
+            public Dialog call() throws Exception {
+                PlusCodeDialog.show(service, true);
+                return activePlusCodeDialog();
+            }
+        });
+        assertNotNull("the HUD keypad was not opened", keypad);
         final HudSessionPolicy aaos = new HudSessionPolicy(EnvironmentFacts.PLATFORM_AAOS,
                 HeadUnitAdapter.ReverseSupport.VERIFIED);
         final int[] started = new int[1];
@@ -194,25 +202,36 @@ public class HudLifecycleTest {
                 }, new CarIntentRouter.Overlay() {
                     @Override
                     public void show() {
-                        // What stopOverlayService delivers to a running service.
-                        service.onStartCommand(new Intent(OverlayHudService.ACTION_HIDE), 0, 2);
+                        // stopOverlayService calls Context#stopService, which destroys a
+                        // running service without delivering another start command.
+                        service.onDestroy();
                     }
                 }).show();
             }
         });
         assertEquals(0, started[0]);
         assertSame(HudSessionPolicy.Reason.AAOS_PLATFORM, explained[0]);
-        assertClosed(service);
+        assertWindowsAndDialogsGone(service);
+        assertFalse(QualificationSupport.onMain(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                return keypad.isShowing();
+            }
+        }));
     }
 
     private static void assertClosed(TestHudService service) {
+        assertWindowsAndDialogsGone(service);
+        assertTrue("the service was not stopped", service.ended > 0);
+    }
+
+    private static void assertWindowsAndDialogsGone(final TestHudService service) {
         assertFalse("HUD windows remain", QualificationSupport.onMain(new Callable<Boolean>() {
             @Override
             public Boolean call() {
                 return service.hasOverlayWindows();
             }
         }));
-        assertTrue("the service was not stopped", service.ended > 0);
         assertNull(activePlusCodeDialog());
     }
 
@@ -229,9 +248,13 @@ public class HudLifecycleTest {
         });
     }
 
-    /** A service with a granted, expanded HUD session and attached overlay windows. */
-    private static TestHudService showingService() throws Exception {
+    /**
+     * A service with a granted, expanded HUD session and attached overlay windows. It is
+     * assigned to {@link #service} before any assertion so tearDown always destroys it.
+     */
+    private TestHudService showingService() throws Exception {
         final TestHudService showing = createdService();
+        service = showing;
         final HudSessionPolicy policy = new HudSessionPolicy(
                 EnvironmentFacts.PLATFORM_AFTERMARKET, HeadUnitAdapter.ReverseSupport.VERIFIED);
         setField(showing, "policy", policy);
@@ -292,6 +315,7 @@ public class HudLifecycleTest {
     /** Records stop requests; Service#stopSelf is a no-op for an instance not started by AMS. */
     static final class TestHudService extends OverlayHudService {
         int ended;
+        private boolean destroyed;
 
         void attach(Context base) {
             attachBaseContext(base);
@@ -300,6 +324,13 @@ public class HudLifecycleTest {
         @Override
         void endService() {
             ended++;
+        }
+
+        @Override
+        public void onDestroy() {
+            if (destroyed) return;
+            destroyed = true;
+            super.onDestroy();
         }
     }
 }
