@@ -1,0 +1,47 @@
+{
+  "policyVersion": 1,
+  "profileId": "xyauto-yt3518c",
+  "profileHash": "daf955f520a0fe0cd554cc32d1ae7a7070820d4397f40a3e84a52c9001e050b7",
+  "firmwareHash": null,
+  "candidateList": "debloat.txt",
+  "candidateListHash": "c6ecd4bbdf2ea53da58ace90a086fd0b23b0c185d544f20888242c70dcb9bee4",
+  "status": "unqualified",
+  "protectedComponents": [
+    "com.autochips.android.backcar",
+    "com.autochips.bluetooth",
+    "com.xygala.canbus",
+    "com.xygala.pvcanset",
+    "com.xy.spl",
+    "com.xy.brakecheck",
+    "com.xyauto.Settings",
+    "com.fvsm.camera",
+    "com.acloud.stub.localmusic",
+    "com.acloud.stub.localradio",
+    "com.mediatek.usbchecker",
+    "com.google.android.apps.maps",
+    "com.google.android.gms"
+  ],
+  "unresolvedDependencies": [
+    {
+      "package": "com.android.providers.calendar",
+      "reason": "Content provider; consumers on this firmware have not been checked on a device."
+    },
+    {
+      "package": "com.android.vending",
+      "reason": "Play Store; Google Maps and GMS update/licensing dependencies have not been checked on a device."
+    },
+    {
+      "package": "com.acloud.xy.search",
+      "reason": "Vendor search stub; launcher and voice-key bindings have not been checked on a device."
+    },
+    {
+      "package": "com.pve.otacheck",
+      "reason": "Vendor OTA checker; firmware update and MCU coupling have not been checked on a device."
+    }
+  ],
+  "qualification": {
+    "reviewers": [],
+    "evidence": []
+  },
+  "notes": "Reference only. debloat.txt is a historical community list for firmware YT3518C_00008_V008 and is not authorized for writes. Qualification requires the exact firmwareHash from a local discovery report, device checks that resolve every unresolvedDependencies entry, and maintainer reviewer and evidence references. Until then the CLI refuses every debloat write for this profile."
+}
