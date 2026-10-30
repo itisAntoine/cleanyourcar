@@ -7,6 +7,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.SocketTimeoutException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 import java.util.Locale;
 
 /**
@@ -215,11 +216,27 @@ public final class BridgeRequestHandler {
      * @throws SocketTimeoutException when {@code timeoutNanos} elapses before the request completes
      */
     public static byte[] readHttpRequest(InputStream in, long timeoutNanos) throws IOException {
+        return readHttpRequest(in, timeoutNanos, null);
+    }
+
+    /** Applies the remaining deadline (in ms) to the underlying socket before every read. */
+    public interface ReadTimeoutSetter {
+        void setReadTimeoutMillis(int millis) throws IOException;
+    }
+
+    public static byte[] readHttpRequest(InputStream in, long timeoutNanos, ReadTimeoutSetter timeoutSetter)
+            throws IOException {
         long startNanos = System.nanoTime();
         int limit = NavBridgeProtocol.MAX_REQUEST_BYTES + 1;
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         byte[] chunk = new byte[512];
         while (true) {
+            long remainingNanos = timeoutNanos - (System.nanoTime() - startNanos);
+            if (remainingNanos <= 0) throw new SocketTimeoutException("request deadline");
+            if (timeoutSetter != null) {
+                long remainingMillis = TimeUnit.NANOSECONDS.toMillis(remainingNanos);
+                timeoutSetter.setReadTimeoutMillis((int) Math.max(1L, Math.min(Integer.MAX_VALUE, remainingMillis)));
+            }
             int n = in.read(chunk, 0, Math.min(chunk.length, limit - buffer.size()));
             if (n < 0) break;
             buffer.write(chunk, 0, n);

@@ -8,7 +8,7 @@
 
 1. Mở **Google Maps** trên iPhone, chạm vào địa điểm muốn đi → kéo xuống mục thông tin sẽ thấy mã **Plus Code** (ví dụ: `QMVX+2P TP. Hồ Chí Minh`).
 2. Trên màn hình xe, bấm nút **`[ 🔢 Mã 6 ký tự ]`**.
-3. Chọn đúng tỉnh/thành phố ở góc trên bên phải (mặc định là **TP. Hồ Chí Minh**, hoặc nếu xe đã bắt GPS thì tự lấy vị trí GPS của xe).
+3. Mã ngắn 6 ký tự cần một **điểm tham chiếu** để giải mã. Ứng dụng **không còn mặc định TP. Hồ Chí Minh** hay bất kỳ thành phố ngầm định nào: trong **Thiết lập (Setup)**, hãy chọn một **thành phố đã lưu**, hoặc **vị trí hiện tại** (chỉ khi bạn đồng ý cho dùng vị trí), hoặc **Không có**. Nếu chọn *Không có*, mã ngắn không thể giải mã — hãy chọn một tham chiếu trước khi dùng mã ngắn.
 4. Bấm 6 ký tự (ví dụ `QMVX2P` — dấu `+` tự động điền sau ký tự thứ 4) rồi bấm **`[ 🧭 ĐI NGAY ]`**.
 5. Màn hình xe tự động giải mã toán học ra tọa độ GPS chính xác và bật **Google Maps Live** ở giữa khung CarPlay.
 
@@ -71,5 +71,7 @@ Khi đã bật **Nhận qua Bluetooth LE** và bấm **Bắt đầu**, đầu xe
   - Tọa độ trực tiếp: `10.7769,106.7009`
   - Mã Plus Code: `QMVX+2P`
   - Đường dẫn Google Maps: `https://www.google.com/maps/place/.../@10.7769,106.7009,17z`
+
+> ⚠️ **Không bảo mật nội dung.** Characteristic dùng quyền ghi thông thường (không yêu cầu ghép đôi/mã hóa BLE), nên thiết bị ở gần có thể nghe được token và điểm đến. Token chỉ chống ghi trái phép từ người không biết token, **không phải mã hóa**; chỉ dùng trong môi trường tin cậy (trong xe của bạn) và thu hồi/tạo token mới nếu nghi ngờ bị lộ.
 
 Chuỗi thô kiểu cũ (chỉ có điểm đến, không có dòng `CYC-NAV/1` và token) sẽ bị từ chối. Dùng công cụ BLE trên iPhone (như *nRF Connect*, *LightBlue*, *Bluefy*, hoặc app iOS riêng) ghi tin nhắn trên vào Characteristic `0000c911-...`; với tin nhắn dài, dùng chế độ ghi dài (Write with response / prepared write).

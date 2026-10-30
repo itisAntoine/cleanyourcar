@@ -9,6 +9,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -21,44 +22,81 @@ public final class HotspotBurstServer implements BridgeSession.Transport {
     private final int port;
     private final InetAddress bindAddress;
     private volatile boolean running;
+    /** Incremented by {@link #stop()}; pending asynchronous starts from older generations abort. */
+    private long startGeneration;
     private ServerSocket tcpServer;
 
     /**
      * @param bindAddress address to bind, or null for all local interfaces (hotspot address varies)
      */
     public HotspotBurstServer(BridgeRequestHandler handler, int port, InetAddress bindAddress) {
+        this(handler, port, bindAddress, new Executor() {
+            @Override
+            public void execute(Runnable command) {
+                Thread starter = new Thread(command, "NavBridge-HTTP-start");
+                starter.setDaemon(true);
+                starter.start();
+            }
+        });
+    }
+
+    /** Test seam: {@code starterExecutor} runs the asynchronous bind of {@link #start(BridgeSession.TransportCallback)}. */
+    HotspotBurstServer(BridgeRequestHandler handler, int port, InetAddress bindAddress, Executor starterExecutor) {
         this.handler = handler;
         this.port = port;
         this.bindAddress = bindAddress;
+        this.starterExecutor = starterExecutor;
     }
+
+    private final Executor starterExecutor;
 
     private volatile BridgeSession.TransportCallback callback;
 
     /** Binds synchronously; success is reported only after the socket is actually listening. */
     public void start() throws IOException {
-        startListening(null);
+        long generation;
+        synchronized (this) {
+            generation = startGeneration;
+        }
+        startListening(null, generation);
     }
 
     @Override
     public void start(final BridgeSession.TransportCallback callback) {
-        Thread starter = new Thread(new Runnable() {
+        final long generation;
+        synchronized (this) {
+            generation = startGeneration;
+        }
+        starterExecutor.execute(new Runnable() {
             @Override
             public void run() {
                 try {
-                    startListening(callback);
-                    callback.onStarted("port " + getLocalPort());
+                    if (startListening(callback, generation)) {
+                        callback.onStarted("port " + getLocalPort());
+                    }
                 } catch (IOException | RuntimeException e) {
-                    callback.onFailed("LAN listener could not bind port " + port + ": "
-                            + e.getClass().getSimpleName());
+                    if (isCurrent(generation)) {
+                        callback.onFailed("LAN listener could not bind port " + port + ": "
+                                + e.getClass().getSimpleName());
+                    }
                 }
             }
-        }, "NavBridge-HTTP-start");
-        starter.setDaemon(true);
-        starter.start();
+        });
     }
 
-    private synchronized void startListening(BridgeSession.TransportCallback cb) throws IOException {
-        if (running) return;
+    private synchronized boolean isCurrent(long generation) {
+        return generation == startGeneration;
+    }
+
+    /**
+     * Binds under the same lock as {@link #stop()}. A start whose generation was superseded by a
+     * stop never binds, so a late asynchronous start cannot leave an orphaned listener running.
+     *
+     * @return true only if this call bound a new listener
+     */
+    private synchronized boolean startListening(BridgeSession.TransportCallback cb, long generation)
+            throws IOException {
+        if (generation != startGeneration || running) return false;
         final ServerSocket server = new ServerSocket();
         try {
             server.setReuseAddress(true);
@@ -78,10 +116,12 @@ public final class HotspotBurstServer implements BridgeSession.Transport {
         }, "NavBridge-HTTP");
         tcpThread.setDaemon(true);
         tcpThread.start();
+        return true;
     }
 
     @Override
     public synchronized void stop() {
+        startGeneration++;
         running = false;
         callback = null;
         if (tcpServer != null) {
@@ -98,6 +138,11 @@ public final class HotspotBurstServer implements BridgeSession.Transport {
         return tcpServer == null ? -1 : tcpServer.getLocalPort();
     }
 
+    /**
+     * Single-threaded by design: connections are served one at a time. This is acceptable because
+     * LAN reception is meant for a trusted network and each connection is bounded by the 2s
+     * per-connection deadline and the 4KiB request limit.
+     */
     private void runAcceptLoop(ServerSocket server) {
         try {
             while (running && !server.isClosed()) {
@@ -124,7 +169,8 @@ public final class HotspotBurstServer implements BridgeSession.Transport {
             try {
                 InputStream in = client.getInputStream();
                 byte[] request = BridgeRequestHandler.readHttpRequest(in,
-                        TimeUnit.MILLISECONDS.toNanos(NavBridgeProtocol.SOCKET_READ_TIMEOUT_MS));
+                        TimeUnit.MILLISECONDS.toNanos(NavBridgeProtocol.SOCKET_READ_TIMEOUT_MS),
+                        client::setSoTimeout);
                 outcome = handler.handleHttp(request);
             } catch (SocketTimeoutException e) {
                 outcome = BridgeRequestHandler.Outcome.TIMEOUT;

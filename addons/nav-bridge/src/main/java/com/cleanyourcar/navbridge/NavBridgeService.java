@@ -320,13 +320,17 @@ public class NavBridgeService extends Service {
         return builder.build();
     }
 
-    /** One-time explanation that automatic startup now waits for explicit setup. */
+    /**
+     * One-time explanation that automatic startup now waits for explicit setup. The notice is
+     * marked shown only after it was actually posted; if notifications are not allowed yet
+     * (e.g. API 33+ without POST_NOTIFICATIONS), it is retried on the next boot/update broadcast.
+     */
     static void postPauseNoticeOnce(Context context) {
         SharedPreferences prefs = prefs(context);
         if (prefs.getBoolean(KEY_PAUSE_NOTICE_SHOWN, false)) return;
-        prefs.edit().putBoolean(KEY_PAUSE_NOTICE_SHOWN, true).apply();
         NotificationManager nm = (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
         if (nm == null || !canNotify(context)) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !nm.areNotificationsEnabled()) return;
         ensureChannels(context);
         Notification notification = newBuilder(context, CHANNEL_NOTICE)
                 .setSmallIcon(android.R.drawable.ic_menu_compass)
@@ -338,6 +342,7 @@ public class NavBridgeService extends Service {
                 .build();
         try {
             nm.notify(NOTICE_ID, notification);
+            prefs.edit().putBoolean(KEY_PAUSE_NOTICE_SHOWN, true).apply();
         } catch (RuntimeException ignored) {
         }
     }
