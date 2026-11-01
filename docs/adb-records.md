@@ -1,9 +1,9 @@
 # Private ADB records, previews and gated apply
 
-The tooling provides **read-only discovery, local previews and separately gated
-installation/debloat apply**. Production write-qualification registries remain
-empty: no currently shipped firmware is authorized to write. Do not run the
-legacy install/disable/restore scripts as an alternative
+The tooling provides **read-only discovery, local previews, separately gated
+installation/debloat apply, and state-preserving restore/recovery**. Production
+write-qualification registries remain empty: no currently shipped firmware is
+authorized to write. Do not run the legacy install/disable/restore scripts as an alternative
 when a preview refuses an operation. Setup and review are parked-only activities.
 
 ## Preview commands
@@ -26,6 +26,10 @@ python3 tools/car.py plan-install --serial <transport> --user <id> \
 
 python3 tools/car.py plan-restore --serial <transport> --user <id> \
   --operation-id <source-operation-id> --output <private-directory/plan.json>
+
+python3 tools/car.py plan-remove-apk --serial <transport> --user <id> \
+  --operation-id <fresh-install-operation-id> \
+  --output <private-directory/remove-plan.json>
 ```
 
 Use `--records <private-root>` consistently for all related operations; the
@@ -98,7 +102,8 @@ cannot silently treat independently changed states as new originals. A durable
 intent is appended before the command, then originals, proof, identity and state
 are rechecked. Identity is checked again immediately before dispatch and during
 readback. A mismatch, unresolved fact, persistence failure or unexpected state
-stops the batch; there is no retry, reconnect command or destructive alternative.
+stops the batch. Source mutations are never replayed. A separately confirmed
+restore can be retried only through exact fresh readback and its own journal.
 
 Debloat permits only `pm disable-user --user <id> <package>`, one package per
 action. Exact per-user readback must show flag `3`, with unchanged package identity
@@ -136,10 +141,36 @@ and recovery instructions:
 
 An observed successful mutation whose result cannot be persisted is `PARTIAL`,
 not `COMPLETED`; its durable intent is the recovery boundary. Any existing journal
-history, including a failed action, pending intent or torn tail, refuses replay.
-Inspect the records and target while parked; full restoration and separately
-confirmed removal of a newly installed APK belong to Task 5. Restore previews
-remain available, but Task 4 does not execute restore/settings actions.
+history on an install/debloat operation refuses replay. Restore actions have their
+own confirmed plan and journal; a retry first verifies whether the exact original
+state is already present. Inspect records and target while parked.
+
+Restore is a separate, target/user-bound plan and requires its own `apply --plan
+... --confirm ...`; approval of the source operation does not authorize restore.
+Only package enabled-state changes with complete anchored identity/originals and
+durable intent/readback history are inverted. Exact per-user flags are preserved:
+`0` uses the probed `default-state`, `1` `enable`, `2` `disable`, `3`
+`disable-user`, and `4` `disable-until-used`. A first mutation is refused unless
+the selected firmware's read-only `pm` help probe advertises the exact inverse
+command. No state is forced enabled merely because a package appears on a list.
+
+A pending source intent may be reconciled only when a fresh target-bound read
+matches either the original state or the requested state. The fresh observation
+is appended as a durable source-journal readback before an inverse write. Torn
+history, changed package identity/flags, unrelated state changes, or a stale
+source journal are refused with recovery guidance. Restore keeps its own durable
+intent/readback journal; a retry confirms an already-restored state from fresh
+readback rather than issuing the write again. Settings and HOME remain
+unsupported: no qualified inverse or write route is advertised.
+
+APK removal is never bundled into restore. `plan-remove-apk` requires a confirmed
+fresh non-system install record, recorded original absence, current exact package
+version/enabled state, global package presence, and a probed `pm uninstall
+--user` capability. It produces a separate preview and confirmation and removes
+only the selected user's newly installed application. If any evidence or
+capability is missing, preview refuses and directs the operator to manual
+recovery; no uninstall is guessed or simulated. This does not claim application
+data or firmware rollback. Production writable qualification remains empty.
 
 These are sequential checks, not an atomic transaction with Android. A transport
 replacement or external state/artifact change in the final read-to-command gap
@@ -263,12 +294,13 @@ command. Before appending, that tail is durably preserved in `events.torn`, then
 the journal is truncated to its valid prefix and synced. Corrupt complete lines,
 duplicate JSON keys, broken chains, and invalid action references refuse loading.
 
-Restore previews include package-state actions only for confirmed readbacks with
-exact originals and unchanged package identity/current observed state. Pending
-intent, failed readback, and torn-tail limitations remain explicit. Originals
-alone do not prove that anything changed. HOME, permissions, settings restoration,
-APK removal, and application-data rollback are not guessed; full restoration is
-Task 5.
+Restore previews include package-state actions only for confirmed changes or a
+pending write whose outcome is established by a fresh readback. A changed
+external state is a conflict, not permission to overwrite it. Pending intents
+are explicitly journal-reconciled; torn tails and missing/mismatched identity
+remain unresolved. Originals alone do not prove that anything changed. HOME,
+permissions, and settings restoration remain unsupported. APK removal is a
+separate capability-gated preview, and application-data rollback is not claimed.
 
 `RecoveryRecord.export_summary()` is an allowlist containing only operation type,
 counts, torn status, and constant limitations. It excludes target identifiers and

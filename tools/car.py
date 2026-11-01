@@ -14,7 +14,7 @@ from car_support.adb import AdbClient, AdbError  # noqa: E402
 from car_support.profiles import DiscoveryError, discover  # noqa: E402
 from car_support.profiles import load_policy, load_profile, PolicyError  # noqa: E402
 from car_support.operations import (apply, ApplyResult, plan_debloat, plan_install,  # noqa: E402
-                                    plan_restore, PlanError)
+                                    plan_restore, plan_remove_apk, PlanError)
 from car_support.records import RecordStore, RecordError, write_private_json  # noqa: E402
 
 
@@ -28,7 +28,7 @@ def _parser():
     disc.add_argument("--output", required=True, type=Path,
                       help="private report path; keep it out of Git and shared profiles")
     disc.add_argument("--adb", help="adb executable (default: $ADB, then adb on PATH)")
-    for name in ("plan-debloat", "plan-install", "plan-restore"):
+    for name in ("plan-debloat", "plan-install", "plan-restore", "plan-remove-apk"):
         preview = commands.add_parser(name, help="read-only, target-bound private preview")
         preview.add_argument("--serial", required=True, help="explicit selected ADB transport")
         preview.add_argument("--user", required=True, type=int, help="explicit Android user")
@@ -37,8 +37,9 @@ def _parser():
                              help="private preview path in a directory with mode 0700")
         preview.add_argument("--records", type=Path,
                              help="private record root (default: ~/.cleanyourcar/records)")
-        if name == "plan-restore":
-            preview.add_argument("--operation-id", required=True, help="source recovery operation ID")
+        if name in {"plan-restore", "plan-remove-apk"}:
+            preview.add_argument("--operation-id", required=True,
+                                 help="source recovery operation ID")
         else:
             preview.add_argument("--profile", required=True, type=Path)
             preview.add_argument("--app-version-code", type=int, default=1)
@@ -139,6 +140,8 @@ def _preview(args, parser, runner):
         store = RecordStore(args.records)
         if args.command == "plan-restore":
             plan = plan_restore(store.load(args.operation_id), report)
+        elif args.command == "plan-remove-apk":
+            plan = plan_remove_apk(store.load(args.operation_id), report, client)
         else:
             profile = load_profile(args.profile, args.app_version_code)
             if args.command == "plan-debloat":
@@ -149,11 +152,15 @@ def _preview(args, parser, runner):
                 metadata = json.loads(args.apk_metadata.read_text(encoding="utf-8"))
                 plan = plan_install(report, profile, metadata)
         record = store.save_original(plan, report)
+        executable_restore = (plan.operation == "restore"
+                              and bool(plan.actions or plan.preconditions["source_recoveries"])
+                              and not plan.preconditions["restore_blockers"])
         preview = {"plan": plan.to_dict(), "plan_hash": plan.plan_hash,
                    "originals": record.snapshot_dict(), "record_hash": record.record_hash,
                    "confirmation_hash": plan.confirmation_hash(record),
                    "unresolved_facts": report.unresolved_facts,
-                   "execution_available": plan.operation in {"debloat", "install"}}
+                   "execution_available": (plan.operation in {"debloat", "install", "remove"}
+                                           or executable_restore)}
         write_private_json(args.output, preview)
     except (AdbError, DiscoveryError, PolicyError, PlanError, RecordError, OSError,
             ValueError, TypeError) as error:

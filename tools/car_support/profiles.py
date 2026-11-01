@@ -124,10 +124,20 @@ def _probe_capabilities(client, unresolved):
     text = usage.stdout + "\n" + usage.stderr
     if "list packages" not in text:
         unresolved.append("command_capabilities.pm")
+    commands = {
+        "enable": "enable",
+        "disable": "disable",
+        "disable_user": "disable-user",
+        "disable_until_used": "disable-until-used",
+        "default_state": "default-state",
+    }
     return {
         "cmd_package": listing.returncode == 0 and "package" in services,
-        "disable_user": "disable-user" in text,
-        "default_state": "default-state" in text,
+        **{key: bool(re.search(r"(?m)^\s*(?:pm\s+)?" + re.escape(command)
+                               + r"(?:\s|\[)", text))
+           for key, command in commands.items()},
+        "uninstall_user": bool(re.search(
+            r"(?m)^\s*(?:pm\s+)?uninstall\b[^\n]*--user\b", text)),
         "list_packages_user": "list packages" in text and "--user" in text,
     }
 

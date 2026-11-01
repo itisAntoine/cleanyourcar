@@ -450,6 +450,12 @@ class RecordStore:
             if event["confirmed"] and (observed.get("package") != action["package"]
                                        or observed.get("version_code") != action["version_code"]):
                 raise RecordError("installed identity readback does not match the APK")
+        elif action["type"] == "UNINSTALL_FRESH_APK":
+            if event["confirmed"] and (
+                    observed.get("package") is not None
+                    or observed.get("version_code") is not None
+                    or observed.get("enabled_flag") is not None):
+                raise RecordError("APK removal readback does not establish per-user absence")
         elif event["confirmed"] and observed.get("value", object()) != action["value"]:
             raise RecordError("setting readback does not match the requested state")
 
