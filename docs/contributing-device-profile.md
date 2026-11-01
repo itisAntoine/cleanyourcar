@@ -1,5 +1,11 @@
 # Contributing a device profile
 
+Start with [AGENTS.md](../AGENTS.md) for job routing and contribution checks. Use
+[troubleshooting](TROUBLESHOOTING.md) for known failures and
+[SECURITY.md](../SECURITY.md) for private vulnerability reporting availability/setup.
+Host-side tooling is complete and tested offline; physical write qualification remains
+pending. No production firmware is write-supported, and current adapters deny HUD.
+
 A device profile tells CleanYourCar what is known about one head-unit model and firmware:
 
 - how to recognize the unit;

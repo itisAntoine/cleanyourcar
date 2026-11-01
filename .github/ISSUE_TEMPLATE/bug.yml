@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible issue without private device data.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [troubleshooting](https://github.com/itisAntoine/cleanyourcar/blob/HEAD/docs/TROUBLESHOOTING.md) first.
+        Report vulnerabilities via [SECURITY.md](https://github.com/itisAntoine/cleanyourcar/blob/HEAD/SECURITY.md),
+        not this public form. Never attach raw logs or private ADB records.
+  - type: dropdown
+    id: part
+    attributes:
+      label: Affected part
+      options:
+        - launcher
+        - HUD
+        - navbridge
+        - tools
+        - profile
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and firmware
+      description: Sanitized head-unit model, actual SDK, firmware and app revision; host-only if appropriate.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include safe reason codes; do not bypass a refusal to reproduce.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Parked setup only; distinguish offline tests from physical observations.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized log excerpt
+      description: Only minimal relevant output. Remove tokens, serials, IPs, VINs, accounts and location; no raw dumps.

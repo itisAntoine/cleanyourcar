@@ -62,6 +62,9 @@ release requires your own signing configuration, kept outside the repository.
 
 ## Documentation
 
+- [Agent guidance](AGENTS.md): route setup, profile and code work before running commands.
+- [Security reporting](SECURITY.md) and [troubleshooting](docs/TROUBLESHOOTING.md):
+  private reporting setup and safe incident handling.
 - [Compatibility](docs/compatibility.md):
   - support badges and evidence states;
   - AAOS limits;

@@ -1,0 +1,88 @@
+name: Device profile report
+description: Propose sanitized compatibility facts, not production write authorization.
+title: "[Profile] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Follow [the contribution guide](https://github.com/itisAntoine/cleanyourcar/blob/HEAD/docs/contributing-device-profile.md).
+        Do not attach raw reports, tokens, serials, IPs, VINs or location.
+        Host tests do not qualify firmware; HUD is denied on current adapters.
+  - type: input
+    id: model
+    attributes:
+      label: Head-unit model
+      description: Model and SoC only; no vehicle or device identifiers.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - aftermarket
+        - aaos
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android release and actual SDK
+      description: Include actual ro.build.version.sdk; the advertised release may differ.
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Sanitized build display string
+      description: Review for identifiers before posting; no raw getprop dump.
+    validations:
+      required: true
+  - type: dropdown
+    id: adapter
+    attributes:
+      label: Adapter used
+      options:
+        - generic
+        - xyauto-yt3518c
+    validations:
+      required: true
+  - type: dropdown
+    id: progress
+    attributes:
+      label: How far did you get?
+      description: Select observed milestones only. Selection grants no support badge or write access.
+      multiple: true
+      options:
+        - APK installed
+        - Basic works
+        - HOME set
+        - media works
+        - HUD tested
+        - ADB discovery
+        - ADB debloat
+    validations:
+      required: true
+  - type: dropdown
+    id: evidence
+    attributes:
+      label: Evidence class
+      description: New candidates are reported; maintainer-reviewed requires actual maintainer review.
+      options:
+        - reported
+        - device-tested
+        - maintainer-reviewed
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Observed results and limitations
+      description: Separate host-only checks from authorized physical observations. Do not enable HUD to fill this form.
+    validations:
+      required: true
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Optional sanitized screenshot
+      description: Blur personal data, tokens, serials, IPs, VINs, accounts and location before attaching.
