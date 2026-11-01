@@ -330,6 +330,40 @@ class CliContractTest(unittest.TestCase):
             with self.subTest(leak=leak):
                 self.assertNotIn(leak, text)
 
+    def test_export_malformed_report_types_refused_without_traceback(self):
+        SCRATCH.mkdir(exist_ok=True)
+        directory = Path(tempfile.mkdtemp(dir=str(SCRATCH)))
+        self.addCleanup(shutil.rmtree, str(directory), True)
+        cases = [("platform", v) for v in ([], {}, ["aftermarket"], {"a": 1})]
+        cases += [("buildProperties", v) for v in ([], ["board"], "board", 7, None)]
+        cases += [("environment", v) for v in ([], "x", None)]
+        cases += [("sdk", v) for v in ([], {}, "30", True)]
+        for field, value in cases:
+            report = self.private_report()
+            if field == "environment":
+                report["environment"] = value
+            elif field == "buildProperties":
+                report["environment"]["buildProperties"] = value
+            else:
+                report["environment"][field] = value
+            with self.subTest(field=field, value=value):
+                code, output, err = self.export(report, directory)
+                if field == "platform":
+                    # An unrecognized platform value is not trusted; the candidate is still valid.
+                    self.assertEqual(code, 0, err)
+                    self.assertEqual(json.loads(output.read_text())["platform"], "aftermarket")
+                    output.unlink()
+                else:
+                    self.assertEqual(code, 1, err)
+                    self.assertNotIn("Traceback", err)
+                    self.assertFalse(output.exists())
+        source = directory / "list.json"
+        source.write_text("[1, 2]", encoding="utf-8")
+        code, _, err = self.run_main(["export-profile", "--report", str(source),
+                                      "--output", str(directory / "x.json")])
+        self.assertEqual(code, 1)
+        self.assertFalse((directory / "x.json").exists())
+
     def test_export_refuses_unusable_reports(self):
         SCRATCH.mkdir(exist_ok=True)
         directory = Path(tempfile.mkdtemp(dir=str(SCRATCH)))

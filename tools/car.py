@@ -163,7 +163,7 @@ def _local(args):
         else:
             _write_private(args.output, describe_apk(args.apk))
             print("APK metadata written to %s" % args.output)
-    except (PolicyError, PlanError, OSError, ValueError) as error:
+    except (PolicyError, PlanError, OSError, ValueError, RecursionError) as error:
         print("error: %s refused: %s" % (args.command, error), file=sys.stderr)
         return 1
     return 0

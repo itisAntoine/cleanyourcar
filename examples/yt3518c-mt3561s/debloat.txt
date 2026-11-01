@@ -1,4 +1,4 @@
-# Verified Safe Debloat List for XYAuto YT3518C (mt3561s / evb3561sv_w_65_m0)
+# Historical unqualified candidate list (not verified safe) for XYAuto YT3518C (mt3561s / evb3561sv_w_65_m0)
 # Firmware: YT3518C_00008_V008 | True OS: Android 6.0 (SDK 23) | RAM: 2 GB
 #
 # Safety rule: Only reversible `pm disable-user` is used. Never `pm uninstall`.
@@ -38,7 +38,8 @@ com.android.wallpaper
 com.mediatek.rcs.blacklist
 
 # --- 3. Unused Video Players, Gallery & Background Play Store (~350 MB RAM) ---
-# (Can be re-enabled anytime via `tools/restore.sh` or `adb shell pm enable <pkg>`)
+# (Recovery: only via a recorded operation-id restore preview from `tools/restore.sh`,
+# then a separate explicit `car.py apply`. Never enable packages from this list directly.)
 com.acloud.stub.video
 com.mxtech.videoplayer.ad
 com.android.gallery3d

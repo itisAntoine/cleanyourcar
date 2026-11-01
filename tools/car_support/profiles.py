@@ -997,12 +997,18 @@ def export_candidate(report):
     source = report["environment"]
     if not _is_int(source.get("sdk")) or source["sdk"] < 1:
         raise PolicyError("report has no readable SDK level")
-    properties = {key: value for key, value in sorted(source.get("buildProperties", {}).items())
-                  if key in BUILD_PROPERTY_KEYS and isinstance(value, str) and value}
+    raw_properties = source.get("buildProperties")
+    if not isinstance(raw_properties, dict):
+        raise PolicyError("report buildProperties is not an object")
+    properties = {key: value for key, value in sorted(raw_properties.items())
+                  if isinstance(key, str) and key in BUILD_PROPERTY_KEYS
+                  and isinstance(value, str) and value}
     if not properties:
         raise PolicyError("report has no exact build properties; a candidate would match "
                           "every device of this SDK")
-    platform = source.get("platform") if source.get("platform") in PLATFORMS else "aftermarket"
+    reported_platform = source.get("platform")
+    platform = (reported_platform if isinstance(reported_platform, str)
+                and reported_platform in PLATFORMS else "aftermarket")
     digest = hashlib.sha256(json.dumps([source["sdk"], properties], sort_keys=True)
                             .encode("utf-8")).hexdigest()[:12]
     evidence = {"classification": "reported",
