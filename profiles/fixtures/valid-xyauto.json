@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "profileId": "xyauto-yt3518c",
+  "revision": 1,
+  "minAppVersionCode": 1,
+  "platform": "aftermarket",
+  "adapterId": "xyauto-yt3518c",
+  "match": {
+    "sdkMin": 23,
+    "sdkMax": 23,
+    "buildProperties": {
+      "board": "evb3561sv_w_65_m0",
+      "manufacturer": "alps",
+      "display": "YT3518C_00008_V008"
+    }
+  },
+  "roleDefaults": {
+    "navigation": {
+      "packageName": "com.google.android.apps.maps",
+      "strategyId": "google-navigation"
+    },
+    "bluetooth-music": {
+      "packageName": "com.autochips.bluetooth",
+      "componentName": "com.autochips.bluetooth/.MainBluetoothActivity",
+      "strategyId": "launch-component"
+    },
+    "local-music": {
+      "packageName": "com.acloud.stub.localmusic",
+      "componentName": "com.acloud.stub.localmusic/.QtActivity",
+      "strategyId": "launch-component"
+    },
+    "radio": {
+      "packageName": "com.acloud.stub.localradio",
+      "componentName": "com.acloud.stub.localradio/.QtActivity",
+      "strategyId": "launch-component"
+    },
+    "dashcam": {
+      "packageName": "com.fvsm.camera",
+      "componentName": "com.fvsm.camera/.MainActivity",
+      "strategyId": "launch-component"
+    },
+    "equalizer": {
+      "packageName": "com.xyauto.Settings",
+      "componentName": "com.xyauto.Settings/.MainActivity",
+      "strategyId": "xyauto-equalizer"
+    },
+    "settings": {
+      "packageName": "com.android.settings",
+      "componentName": "com.android.settings/.Settings",
+      "strategyId": "launch-component"
+    }
+  },
+  "featureClaims": {
+    "media-transport": "requires-local-check",
+    "media-metadata": "requires-local-check",
+    "source-selection": "requires-local-check",
+    "reverse-detection": "requires-local-check",
+    "overlay": "requires-local-check",
+    "brightness": "requires-local-check"
+  },
+  "protectedPackages": [
+    "com.autochips.android.backcar",
+    "com.autochips.bluetooth",
+    "com.android.bluetooth",
+    "com.xygala.canbus",
+    "com.xygala.pvcanset",
+    "com.xy.spl",
+    "com.xy.brakecheck",
+    "com.xyauto.Settings",
+    "com.fvsm.camera",
+    "com.acloud.stub.localmusic",
+    "com.acloud.stub.localradio",
+    "com.google.android.apps.maps",
+    "com.google.android.gms"
+  ],
+  "evidence": {
+    "classification": "reported",
+    "firmware": "YT3518C_00008_V008 (MediaTek/AutoChips mt3561s); actual SDK 23 (Android 6.0) although ro.build.version.release reports 8.0",
+    "notes": "Reported from sanitized maintainer notes; nothing in this profile is locally verified. Build fingerprint was not captured and is intentionally omitted. The board/manufacturer/display mapping of the reported model and firmware strings must be confirmed by local discovery before an exact match is trusted. Android 6.0 lacks the cmd package shell utility. Reverse camera, Bluetooth, CANBus, MCU bridge, brake check, audio DSP, dashcam, USB music and radio packages must never be disabled.",
+    "references": [
+      "docs/devices/yt3518c-mt3561s.md",
+      "examples/yt3518c-mt3561s/README.md",
+      "examples/yt3518c-mt3561s/debloat.txt"
+    ]
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "description": "Sanitized read-only responses modeled on an API 23 aftermarket head unit without the `cmd` binary (legacy adb shell protocol reports exit 0 for missing commands). All identifiers are fake.",
+  "responses": {
+    "getprop ro.build.version.sdk": {
+      "stdout": "23\n"
+    },
+    "getprop ro.build.version.release": {
+      "stdout": "6.0.1\n"
+    },
+    "getprop ro.product.board": {
+      "stdout": "evb3561sv_w_65_m0\n"
+    },
+    "getprop ro.product.name": {
+      "stdout": "full_evb3561sv_w_65_m0\n"
+    },
+    "getprop ro.product.manufacturer": {
+      "stdout": "alps\n"
+    },
+    "getprop ro.build.display.id": {
+      "stdout": "YT3518C_00008_V008\n"
+    },
+    "getprop ro.build.fingerprint": {
+      "stdout": "alps/full_evb3561sv_w_65_m0/evb3561sv_w_65_m0:6.0.1/MRA58K/fake-build:user/test-keys\n"
+    },
+    "getprop ro.serialno": {
+      "stdout": "0123456789ABCDEF\n"
+    },
+    "getprop ro.boot.serialno": {
+      "stdout": "\n"
+    },
+    "settings get --user 0 secure android_id": {
+      "stdout": "0f1e2d3c4b5a6978\n"
+    },
+    "pm list features": {
+      "stdout": "feature:android.hardware.bluetooth\nfeature:android.hardware.location\nfeature:android.software.home_screen\n"
+    },
+    "cmd -l": {
+      "returncode": 0,
+      "stdout": "/system/bin/sh: cmd: not found\n"
+    },
+    "pm": {
+      "returncode": 1,
+      "stderr": "usage: pm list packages [-f] [-d] [-e] [-s] [-3] [-i] [-u] [--user USER_ID] [FILTER]\n       pm list features\n       pm enable [--user USER_ID] PACKAGE_OR_COMPONENT\n       pm disable [--user USER_ID] PACKAGE_OR_COMPONENT\n       pm disable-user [--user USER_ID] PACKAGE_OR_COMPONENT\n       pm disable-until-used [--user USER_ID] PACKAGE_OR_COMPONENT\n"
+    },
+    "pm list packages --user 0": {
+      "stdout": "package:android\npackage:com.android.launcher3\npackage:com.example.fakebloat\npackage:com.example.fakeenabled\npackage:com.autochips.bluetooth\n"
+    },
+    "dumpsys package packages": {
+      "stdout": "Packages:\n  Package [android] (1a2b3c):\n    userId=1000\n    versionCode=23 targetSdk=23\n    versionName=6.0.1\n    pkgFlags=[ SYSTEM HAS_CODE PERSISTENT ]\n    User 0: installed=true hidden=false stopped=false notLaunched=false enabled=0\n  Package [com.android.launcher3] (2b3c4d):\n    userId=10010\n    versionCode=23 targetSdk=23\n    versionName=1.3\n    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]\n    User 0: installed=true hidden=false stopped=false notLaunched=false enabled=0\n  Package [com.example.fakebloat] (3c4d5e):\n    userId=10020\n    versionCode=7 targetSdk=23\n    versionName=1.0\n    pkgFlags=[ SYSTEM HAS_CODE ]\n    User 0: installed=true hidden=false stopped=false notLaunched=false enabled=3\n  Package [com.example.fakeenabled] (4d5e6f):\n    userId=10021\n    versionCode=3 targetSdk=23\n    versionName=0.3\n    pkgFlags=[ HAS_CODE ]\n    User 0: installed=true hidden=false stopped=false notLaunched=false enabled=1\n  Package [com.autochips.bluetooth] (5e6f70):\n    userId=1002\n    versionCode=1 targetSdk=23\n    versionName=1.0\n    pkgFlags=[ SYSTEM HAS_CODE ]\n    User 0: installed=true hidden=false stopped=false notLaunched=false enabled=0\n\nHidden system packages:\n  Package [com.example.fakebloat] (6f7081):\n    userId=10020\n    versionCode=1 targetSdk=23\n    User 0: installed=true hidden=false stopped=false notLaunched=false enabled=0\n"
+    },
+    "dumpsys package preferred-xml": {
+      "stdout": "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n<preferred-activities>\n<item name=\"com.android.launcher3/com.android.launcher3.Launcher\" match=\"100000\" always=\"true\" set=\"1\">\n<set name=\"com.android.launcher3/com.android.launcher3.Launcher\" />\n<filter>\n<action name=\"android.intent.action.MAIN\" />\n<cat name=\"android.intent.category.HOME\" />\n<cat name=\"android.intent.category.DEFAULT\" />\n</filter>\n</item>\n</preferred-activities>\n"
+    },
+    "wm size": {
+      "stdout": "Physical size: 1024x600\n"
+    },
+    "wm density": {
+      "stdout": "Physical density: 160\n"
+    },
+    "pm list users": {
+      "stdout": "Users:\n\tUserInfo{0:Owner:13} running\n"
+    }
+  }
+}

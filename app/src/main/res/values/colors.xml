@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_canvas">#FF090D18</color>
+    <color name="glass_primary">#FF1856FF</color>
+    <color name="glass_secondary">#FF3A344E</color>
+    <color name="glass_success">#FF07CA6B</color>
+    <color name="glass_warning">#FFE89558</color>
+    <color name="glass_danger">#FFEA2143</color>
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#FFB8C4E0</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>

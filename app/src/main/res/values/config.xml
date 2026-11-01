@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer name="default_grid_columns">4</integer>
+    <integer name="default_grid_rows">2</integer>
+    <integer name="default_theme_id">0</integer>
+    <bool name="default_dock_left">true</bool>
+    <bool name="default_swap_dashboard_columns">false</bool>
+</resources>

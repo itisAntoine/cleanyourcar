@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CleanYourCar device profile, schema version 1",
+  "description": "Data-only device profile. Whole document is limited to 65536 UTF-8 bytes. x-maxUtf8Bytes limits are byte counts and are authoritative over maxLength. Cross-field rules (strategy/role/adapter, component package, sdkMin <= sdkMax, minAppVersionCode <= running app versionCode) are enforced by ProfileCodec and the tooling validators.",
+  "x-maxDocumentUtf8Bytes": 65536,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profileId",
+    "revision",
+    "minAppVersionCode",
+    "platform",
+    "adapterId",
+    "match",
+    "roleDefaults",
+    "featureClaims",
+    "protectedPackages",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "profileId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "x-maxUtf8Bytes": 128,
+      "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "minAppVersionCode": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "platform": {
+      "enum": [
+        "aftermarket",
+        "aaos"
+      ]
+    },
+    "adapterId": {
+      "enum": [
+        "generic",
+        "xyauto-yt3518c"
+      ]
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sdkMin",
+        "sdkMax",
+        "buildProperties"
+      ],
+      "properties": {
+        "sdkMin": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "sdkMax": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "buildProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Exact string matches; empty values are invalid, not wildcards.",
+          "properties": {
+            "board": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "x-maxUtf8Bytes": 512
+            },
+            "product": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "x-maxUtf8Bytes": 512
+            },
+            "manufacturer": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "x-maxUtf8Bytes": 512
+            },
+            "display": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "x-maxUtf8Bytes": 512
+            },
+            "fingerprint": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "x-maxUtf8Bytes": 512
+            }
+          }
+        }
+      }
+    },
+    "roleDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "navigation": {
+          "$ref": "#/$defs/roleDefault"
+        },
+        "bluetooth-music": {
+          "$ref": "#/$defs/roleDefault"
+        },
+        "local-music": {
+          "$ref": "#/$defs/roleDefault"
+        },
+        "radio": {
+          "$ref": "#/$defs/roleDefault"
+        },
+        "dashcam": {
+          "$ref": "#/$defs/roleDefault"
+        },
+        "equalizer": {
+          "$ref": "#/$defs/roleDefault"
+        },
+        "settings": {
+          "$ref": "#/$defs/roleDefault"
+        }
+      }
+    },
+    "featureClaims": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Absent capability means no imported restriction; a claim never verifies a capability.",
+      "properties": {
+        "app-launch": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        },
+        "navigation": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        },
+        "home": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        },
+        "media-transport": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        },
+        "media-metadata": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        },
+        "source-selection": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        },
+        "reverse-detection": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        },
+        "overlay": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        },
+        "brightness": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        },
+        "ble-receive": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        },
+        "lan-receive": {
+          "enum": [
+            "unsupported",
+            "requires-local-check"
+          ]
+        }
+      }
+    },
+    "protectedPackages": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "x-maxUtf8Bytes": 128,
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$"
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "classification"
+      ],
+      "properties": {
+        "classification": {
+          "enum": [
+            "reported",
+            "device-tested",
+            "maintainer-reviewed"
+          ]
+        },
+        "firmware": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "x-maxUtf8Bytes": 512
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "x-maxUtf8Bytes": 4096
+        },
+        "references": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "x-maxUtf8Bytes": 2048
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "roleDefault": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageName",
+        "strategyId"
+      ],
+      "properties": {
+        "packageName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-maxUtf8Bytes": 128,
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$"
+        },
+        "componentName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "x-maxUtf8Bytes": 512,
+          "pattern": "^[^/]+/\\.?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*$",
+          "description": "Flattened component 'package/class'; the package part must equal packageName. Required when strategyId is launch-component."
+        },
+        "strategyId": {
+          "enum": [
+            "launch-package",
+            "launch-component",
+            "google-navigation",
+            "geo",
+            "xyauto-equalizer"
+          ],
+          "description": "google-navigation and geo are accepted only for the navigation role; xyauto-equalizer only for the equalizer role with adapterId xyauto-yt3518c."
+        }
+      }
+    }
+  }
+}
