@@ -168,6 +168,14 @@ class AdbClient:
             raise ValueError("command is not an allowlisted read: %s" % argv[0])
         return self.shell(argv)
 
+    def install_apk(self, path):
+        """Fresh install of one verified local APK for this explicit user; no update flags."""
+        if (not isinstance(path, str) or not path or path.startswith("-")
+                or any(ord(c) < 32 for c in path)):
+            raise ValueError("install requires a single valid local APK path")
+        return self._runner([self.adb_path, "-s", self.serial, "install", "--user",
+                             str(validate_user(self.android_user)), path], self.timeout)
+
     def identity(self):
         return identity_from_facts(read_environment(self), read_binding_source(self),
                                    self.android_user)

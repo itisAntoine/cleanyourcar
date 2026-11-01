@@ -343,6 +343,24 @@ class RecordStore:
         except (OSError, ValueError, TypeError, KeyError) as error:
             raise RecordError("record load refused: %s" % error) from error
 
+    def load_plan(self, path):
+        """Read a private CLI preview only when it matches the durably trusted record."""
+        try:
+            path = Path(path)
+            _private_directory(path.parent)
+            data = _read_json(path)
+            plan = OperationPlan.from_dict(data["plan"])
+            with self.lock(plan.target):
+                record = self.load(plan.operation_id)
+                if (data["plan_hash"] != plan.plan_hash or record.operation_hash != plan.plan_hash
+                        or data["originals"] != record.snapshot_dict()
+                        or data["record_hash"] != record.record_hash
+                        or data["confirmation_hash"] != plan.confirmation_hash(record)):
+                    raise RecordError("preview differs from the anchored plan/originals/confirmation")
+            return plan
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            raise RecordError("saved private plan refused: %s" % error) from error
+
     def _load(self, operation_id):
         directory = self._directory(operation_id)
         _private_directory(self.root)
@@ -440,6 +458,14 @@ class RecordStore:
         if not path.exists() and not path.is_symlink():
             return [], b"", 0
         data = _read_bytes(path)
+        # Visible journal bytes may follow a failed append fsync. Like anchored
+        # originals, they must be durably re-established before any consumer trusts them.
+        fd = _open_private(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        _sync_directory(directory)
         lines = data.splitlines(keepends=True)
         events = []
         valid_bytes = 0

@@ -13,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from car_support.adb import AdbClient, AdbError  # noqa: E402
 from car_support.profiles import DiscoveryError, discover  # noqa: E402
 from car_support.profiles import load_policy, load_profile, PolicyError  # noqa: E402
-from car_support.operations import plan_debloat, plan_install, plan_restore, PlanError  # noqa: E402
+from car_support.operations import (apply, ApplyResult, plan_debloat, plan_install,  # noqa: E402
+                                    plan_restore, PlanError)
 from car_support.records import RecordStore, RecordError, write_private_json  # noqa: E402
 
 
@@ -47,7 +48,14 @@ def _parser():
             else:
                 preview.add_argument("--apk-metadata", required=True, type=Path,
                                      help="local JSON package/version_code/min_sdk/sha256/path; "
-                                          "metadata is not APK verification")
+                                          "verified against actual APK bytes with existing SDK aapt2")
+    execution = commands.add_parser("apply", help="apply one explicitly confirmed saved private plan")
+    execution.add_argument("--serial", required=True)
+    execution.add_argument("--user", required=True, type=int)
+    execution.add_argument("--adb", help="adb executable (default: $ADB, then adb on PATH)")
+    execution.add_argument("--records", type=Path, help="same private root used for the preview")
+    execution.add_argument("--plan", required=True, type=Path, help="saved private preview")
+    execution.add_argument("--confirm", required=True, help="exact preview confirmation hash")
     return parser
 
 
@@ -111,6 +119,8 @@ def main(argv=None, runner=None):
         return _discover(args, parser, runner)
     if args.command.startswith("plan-"):
         return _preview(args, parser, runner)
+    if args.command == "apply":
+        return _apply(args, parser, runner)
     parser.error("unknown command")
     return 2
 
@@ -143,7 +153,7 @@ def _preview(args, parser, runner):
                    "originals": record.snapshot_dict(), "record_hash": record.record_hash,
                    "confirmation_hash": plan.confirmation_hash(record),
                    "unresolved_facts": report.unresolved_facts,
-                   "execution_available": False}
+                   "execution_available": plan.operation in {"debloat", "install"}}
         write_private_json(args.output, preview)
     except (AdbError, DiscoveryError, PolicyError, PlanError, RecordError, OSError,
             ValueError, TypeError) as error:
@@ -152,8 +162,25 @@ def _preview(args, parser, runner):
     print(_summary(report))
     print(json.dumps(preview, indent=2, sort_keys=True))
     print("private preview: %s" % args.output)
-    print("No remote mutations. No apply command is available in Task 3.")
+    print("No remote mutations. Apply requires this saved preview and explicit --confirm.")
     return 0
+
+
+def _apply(args, parser, runner):
+    plan = None
+    try:
+        store = RecordStore(args.records)
+        plan = store.load_plan(args.plan)
+        adb_path = args.adb or os.environ.get("ADB") or shutil.which("adb")
+        if runner is None and not adb_path:
+            raise PlanError("adb not found; no mutation or success fallback")
+        client = AdbClient(adb_path or "adb", args.serial, args.user, runner=runner)
+        result = apply(plan, client, store, args.confirm)
+    except (RecordError, PlanError, OSError, ValueError, TypeError) as error:
+        result = ApplyResult("REFUSED", getattr(plan, "operation_id", ""),
+                             (), (str(args.plan), str(args.records or RecordStore().root)), str(error))
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    return {"COMPLETED": 0, "REFUSED": 2, "PARTIAL": 3, "FAILED": 1}[result.status]
 
 
 if __name__ == "__main__":

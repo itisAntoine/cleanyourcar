@@ -1,11 +1,13 @@
 """Offline safety contracts for durable records and read-only plan previews."""
 import copy
 import errno
+import hashlib
 import importlib.util
 import io
 import json
 import os
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -411,10 +413,17 @@ class RecordsTest(NoProcessTestCase):
             plan_debloat(self.report, self.profile, unqualified, self.candidates)
 
     def test_install_preview_preserves_absence_and_refuses_unrecoverable_update(self):
+        apk = Path(self.directory.name) / "launcher.apk"
+        apk.write_bytes(b"synthetic launcher artifact")
         metadata = {"package": "com.cleanyourcar.launcher", "version_code": 1,
-                    "min_sdk": 23, "sha256": "a" * 64, "path": "launcher.apk"}
+                    "min_sdk": 23, "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
+                    "path": str(apk)}
         key = (self.report.identity.firmware_hash, self.plan.profile_hash, metadata["package"])
-        with mock.patch("car_support.operations._TRUSTED_INSTALL_QUALIFICATIONS", frozenset({key})):
+        badging = "package: name='com.cleanyourcar.launcher' versionCode='1'\nsdkVersion:'23'\n"
+        with mock.patch("car_support.operations._TRUSTED_INSTALL_QUALIFICATIONS", frozenset({key})), \
+                mock.patch("car_support.operations.find_aapt2", return_value="fake-aapt2"), \
+                mock.patch("subprocess.run", return_value=subprocess.CompletedProcess(
+                    ["fake-aapt2"], 0, badging, "")):
             plan = plan_install(self.report, self.profile, metadata)
             self.assertEqual([a["type"] for a in plan.actions], ["INSTALL_APK"])
             record = self.save(plan)

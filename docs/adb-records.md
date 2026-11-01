@@ -1,7 +1,9 @@
-# Private ADB records and plan previews
+# Private ADB records, previews and gated apply
 
-The tooling currently provides **read-only discovery and local previews**, not an
-executor. Do not run the legacy install/disable/restore scripts as an alternative
+The tooling provides **read-only discovery, local previews and separately gated
+installation/debloat apply**. Production write-qualification registries remain
+empty: no currently shipped firmware is authorized to write. Do not run the
+legacy install/disable/restore scripts as an alternative
 when a preview refuses an operation. Setup and review are parked-only activities.
 
 ## Preview commands
@@ -32,9 +34,21 @@ If keeping records inside a checkout, use its Git-ignored `.cleanyourcar/`
 directory for both records and previews, not an arbitrary tracked directory.
 `--app-version-code` supplies the profile compatibility version (default `1`).
 Installation metadata has exactly `package`, `version_code`, `min_sdk`, `sha256`,
-and `path`. Metadata is **not** evidence that the APK's manifest, signature,
-update compatibility, or bytes have been checked; the future executor must
-independently verify them.
+and `path`. A successful installation preview verifies these against an actual
+local regular APK file: SHA-256 and `aapt2 dump badging` package/version/minSdk.
+Caller-authored metadata alone is never sufficient. The normalized absolute APK
+path and artifact digest are bound into the saved plan. The checks run again at
+apply, immediately before installation and during readback.
+
+Use an **existing** SDK `aapt2`: an explicit `$AAPT2` takes precedence (an invalid
+explicit path refuses rather than falling back), followed by `$ANDROID_SDK_ROOT`,
+`$ANDROID_HOME`, the repository's `local.properties` `sdk.dir`, conventional
+macOS/Linux SDK locations and PATH. Only existing executable tools are selected;
+numeric build-tools versions are searched newest first. No tools are downloaded
+and neither Gradle nor a device is invoked to inspect metadata. Missing APK/tool,
+timeout, nonzero tool exit, diagnostic stderr, malformed/ambiguous metadata or a
+hash/metadata mismatch refuses. SDK compatibility uses the actual integer SDK,
+not an Android marketing version.
 
 Production qualification registries are intentionally empty. Neither the XYAuto
 reference list nor an imported profile/policy qualifies writes. Debloat and
@@ -45,8 +59,93 @@ Optional companion installation is a separate qualified operation.
 Successful previews include target/firmware hashes, Android user, profile/list/
 artifact hashes, ordered typed actions, exact originals, unresolved facts, risk
 notes, a plan hash, and a confirmation hash binding the plan to its recovery
-snapshot. A hash is not user authorization. Task 3 has no `apply` command or
-success-returning execution stub.
+snapshot. A hash is not user authorization. A saved preview never executes itself.
+
+## Explicit apply and result contract
+
+Command form (documentation only; running it contacts and may mutate the
+explicitly selected device):
+
+```text
+python3 tools/car.py apply --serial <transport> --user <id> \
+  --records <same-private-root> --plan <private-directory/plan.json> \
+  --confirm <exact-confirmation-hash>
+```
+
+All four target/approval arguments are required; no implicit device selection,
+interactive approval default or automatic install-on-preview exists.
+`RecordStore.load_plan(path)` reads a private preview and compares its complete
+plan, originals, record hash and confirmation with `RecordStore.load`'s anchored,
+durably revalidated snapshot/aggregate. Editing preview originals cannot replace
+record truth. `apply(plan, client, store, confirmation_hash)` holds the record
+root and target locks throughout the complete batch, including nested load/append
+calls. Use one root consistently; separate roots cannot share this exclusion.
+
+New previews include `preconditions.write_qualification`: the complete profile
+and (for debloat) policy content, bound by the plan/snapshot/confirmation hashes.
+The executor revalidates content against the production release-trust registries
+and the current report before **every** command, including after durable intent
+persistence. The profile, policy, candidate actions and artifact must still bind
+their exact hashes and qualified firmware. Imported evidence strings cannot grant
+qualification. Older previews without proof must be regenerated, not upgraded
+or trusted by the executor.
+
+For each action, apply re-loads anchored originals, verifies confirmation, reads
+fresh identity/firmware/user, HOME and relevant installed identities/exact enabled
+flags, and checks all remaining preconditions plus previously confirmed actions.
+The plan's before facts must match the anchored earliest originals; a new preview
+cannot silently treat independently changed states as new originals. A durable
+intent is appended before the command, then originals, proof, identity and state
+are rechecked. Identity is checked again immediately before dispatch and during
+readback. A mismatch, unresolved fact, persistence failure or unexpected state
+stops the batch; there is no retry, reconnect command or destructive alternative.
+
+Debloat permits only `pm disable-user --user <id> <package>`, one package per
+action. Exact per-user readback must show flag `3`, with unchanged package identity
+and other preconditions. Another user's state does not establish success.
+Installation permits only `adb -s <serial> install --user <id> <verified-local-apk>`,
+with no update/downgrade/permission flags. It requires a recorded absent original
+and fresh absence in the global package dump, including other users and hidden
+system copies: per-user absence alone is not signing/update compatibility. Any
+existing package, unavailable global absence or unverified rollback refuses;
+there is no conflicting-package uninstall. Readback must show the exact package,
+version and an enabled flag (`0` or `1`) for the selected user.
+
+Zero command exit alone never establishes success: recognized package-manager
+output, fresh exact readback and a durable confirmed journal result are required.
+Installation recognizes `Success`, optionally preceded by the fixed ADB
+`Performing Streamed Install` or `Performing Push Install` progress line; arbitrary
+output, failure messages and progress without verified readback do not confirm.
+There are no bridge receivers, HOME, permissions, accessibility, location,
+component launch, factory/camera, reboot or other lifecycle commands. Foreground
+launch and camera/vehicle behavior require separate explicitly authorized parked
+on-device validation; package-manager completion is not a functional/HUD safety
+claim. Physical qualification remains a release gate, not a mocked-test claim.
+
+`ApplyResult` and CLI JSON contain an operation ID, **every planned action** with
+expected/observed before/after (unknown/unattempted observations remain `null`),
+attempted/confirmed flags, snapshot/intent/readback recovery references, an error
+and recovery instructions:
+
+| Status | Meaning | CLI exit |
+| --- | --- | --- |
+| `COMPLETED` | All selected actions verified and durably recorded | `0` |
+| `REFUSED` | No command dispatched; a gate failed (an intent can remain) | `2` |
+| `FAILED` | A command was attempted but no action was verified successful | `1` |
+| `PARTIAL` | A verified action exists but the batch/result durability did not complete | `3` |
+
+An observed successful mutation whose result cannot be persisted is `PARTIAL`,
+not `COMPLETED`; its durable intent is the recovery boundary. Any existing journal
+history, including a failed action, pending intent or torn tail, refuses replay.
+Inspect the records and target while parked; full restoration and separately
+confirmed removal of a newly installed APK belong to Task 5. Restore previews
+remain available, but Task 4 does not execute restore/settings actions.
+
+These are sequential checks, not an atomic transaction with Android. A transport
+replacement or external state/artifact change in the final read-to-command gap
+cannot be prevented atomically by ADB. Fixed non-update commands, repeated identity
+and byte checks, and stop-on-unexpected-readback bound that risk; no stronger
+device-side transaction or hostile-local-owner guarantee is claimed.
 
 ## Storage contract
 
@@ -126,7 +225,7 @@ the guarantee. No remote trust service, signing key or hardware qualification
 is implied.
 
 Locks use nonblocking `flock` and are held by `with store.lock(plan.target):`
-through an entire future executor batch. Save/load/append also lock internally;
+through an entire executor batch. Save/load/append also lock internally;
 same-thread/process nesting on the same store and target is supported. Lock
 files are never unlinked; descriptor closure releases locks after a crash.
 The frozen discovery binding may include user-scoped Android ID facts, so a
@@ -150,11 +249,13 @@ are refused, not silently fixed.
 ```
 
 The intent references the immutable typed action and must be durably returned
-before any future remote command. Readback requires an unmatched intent;
+before any remote command. Readback requires an unmatched intent;
 `confirmed: true` requires the requested observed state, not merely a successful
 shell exit. Failed observations use `confirmed: false` and remain visible.
 Entries carry sequence numbers and a hash chain; snapshots are never rewritten
-to pretend commands succeeded.
+to pretend commands succeeded. Every journal read also re-establishes file and
+containing-directory `fsync` durability before trusting visible bytes. A failed
+append can leave visible content; visibility alone is not a durability receipt.
 
 Loading preserves valid entries before an unterminated final journal line and
 reports `journal_torn`. An incomplete tail is never treated as a confirmed
@@ -167,7 +268,7 @@ exact originals and unchanged package identity/current observed state. Pending
 intent, failed readback, and torn-tail limitations remain explicit. Originals
 alone do not prove that anything changed. HOME, permissions, settings restoration,
 APK removal, and application-data rollback are not guessed; full restoration is
-Task 5, remote execution is Task 4.
+Task 5.
 
 `RecoveryRecord.export_summary()` is an allowlist containing only operation type,
 counts, torn status, and constant limitations. It excludes target identifiers and
@@ -178,8 +279,11 @@ not sanitized exports; inspect and approve additional data before sharing.
 
 ```text
 python3 -m unittest discover -s tools/tests -p test_records.py -v
+python3 -m unittest discover -s tools/tests -p test_operations.py -v
 python3 -m unittest discover -s tools/tests -v
 ```
 
-Tests use synthetic reports/transports and local temporary directories. No real
-ADB, emulator, device or network scan is needed.
+Tests use synthetic reports/transports, fixture APK bytes and mocked subprocess
+`aapt2` output. Set `TMPDIR` to a Git-ignored scratch directory inside the worktree
+when running existing record tests. No real ADB, emulator, device, aapt2 execution
+or network scan is needed; no firmware qualification is established by these tests.
