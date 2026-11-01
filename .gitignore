@@ -16,6 +16,7 @@
 local.properties
 /.superpowers/
 /device-info/
+.cleanyourcar/
 
 
 __pycache__/
