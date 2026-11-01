@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import os
 import re
@@ -93,6 +94,14 @@ def qualified_case():
     return report, profile, policy, candidates, fake
 
 
+def trusted_policy(policy):
+    """Pin a complete synthetic qualification without granting caller-controlled trust."""
+    content = json.dumps(policy, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return mock.patch("car_support.profiles._TRUSTED_QUALIFIED_POLICY_HASHES",
+                      frozenset({digest}))
+
+
 class NoProcessTestCase(unittest.TestCase):
 
     def setUp(self):
@@ -104,6 +113,9 @@ class NoProcessTestCase(unittest.TestCase):
         env = mock.patch.dict(os.environ, {"PATH": ""})
         env.start()
         self.addCleanup(env.stop)
+        trust = trusted_policy(qualified_case()[2])
+        trust.start()
+        self.addCleanup(trust.stop)
 
 
 class ProfileContractTest(NoProcessTestCase):
@@ -328,7 +340,8 @@ class CandidateListTest(NoProcessTestCase):
             changed_report.package_flags[extra] = 0
             changed = candidates + [extra]
             changed_policy = dict(policy, candidateListHash=candidate_list_hash(changed))
-            with self.subTest(extra=extra), self.assertRaises(PolicyError):
+            with self.subTest(extra=extra), trusted_policy(changed_policy), \
+                    self.assertRaises(PolicyError):
                 validate_debloat_policy(changed_report, profile, changed_policy, changed)
         self.assertEqual(fake.mutating_calls, [])
 
@@ -337,7 +350,7 @@ class CandidateListTest(NoProcessTestCase):
         validate_debloat_policy(report, profile, policy, candidates)
 
         def refused(report=report, policy=policy, candidates=candidates):
-            with self.assertRaises(PolicyError):
+            with trusted_policy(policy), self.assertRaises(PolicyError):
                 validate_debloat_policy(report, profile, policy, candidates)
 
         with self.subTest("unresolved dependency recorded for a candidate"):
@@ -393,23 +406,92 @@ class CandidateListTest(NoProcessTestCase):
             changed.unresolved_facts.append("packages.unparsed")
             refused(report=changed)
 
-        # API 23 has no HOME candidate query; a resolved preferred default is still owned.
+        # A preferred default does not establish ownership of every usable HOME.
         legacy = copy.deepcopy(report)
         legacy.home_candidates = [{"component": "com.example.fakehome/.HomeActivity",
                                    "default": True}]
         legacy.unresolved_facts.append("home.candidates")
-        validate_debloat_policy(legacy, profile, policy, candidates)
+        refused(report=legacy)
         self.assertEqual(fake.mutating_calls, [])
 
 
 class PolicyGateTest(NoProcessTestCase):
+
+    def test_imported_qualification_cannot_self_authorize(self):
+        report, profile, policy, candidates, fake = qualified_case()
+        with mock.patch("car_support.profiles._TRUSTED_QUALIFIED_POLICY_HASHES",
+                        frozenset()), self.assertRaises(PolicyError):
+            validate_debloat_policy(report, profile, policy, candidates)
+        forged = copy.deepcopy(policy)
+        forged["qualification"] = {
+            "reviewers": ["user:forged-maintainer"],
+            "evidence": ["https://example.invalid/invented-device-checks"],
+        }
+        forged["unresolvedDependencies"] = []
+        forged["status"] = "qualified"
+        with self.assertRaises(PolicyError):
+            validate_debloat_policy(report, profile, forged, candidates)
+        self.assertEqual(fake.mutating_calls, [])
+
+    def test_complete_trusted_policy_content_is_pinned(self):
+        report, profile, policy, candidates, fake = qualified_case()
+        validate_debloat_policy(report, profile, copy.deepcopy(policy), candidates)
+        # Key order is formatting, not a change to reviewed content.
+        reordered = dict(reversed(list(policy.items())))
+        validate_debloat_policy(report, profile, reordered, candidates)
+        changes = {
+            "profileId": "other",
+            "profileHash": "0" * 64,
+            "firmwareHash": "0" * 64,
+            "candidateList": "other.txt",
+            "candidateListHash": "0" * 64,
+            "protectedComponents": [],
+            "qualification": {"reviewers": ["maintainer:other"],
+                              "evidence": policy["qualification"]["evidence"]},
+            "notes": "Importer changed the reviewed dependency decision.",
+        }
+        for field, value in changes.items():
+            with self.subTest(field=field), self.assertRaisesRegex(
+                    PolicyError, "trusted bundled qualification"):
+                validate_debloat_policy(report, profile, dict(policy, **{field: value}),
+                                        candidates)
+        evidence = copy.deepcopy(policy)
+        evidence["qualification"]["evidence"] = ["forged"]
+        with self.assertRaisesRegex(PolicyError, "trusted bundled qualification"):
+            validate_debloat_policy(report, profile, evidence, candidates)
+        self.assertEqual(fake.mutating_calls, [])
+
+    def test_api23_unenumerated_alternate_home_is_refused(self):
+        report, fake = discovered("discovery-api23-aftermarket.json")
+        self.assertIn("home.candidates", report.unresolved_facts)
+        self.assertTrue(any(c["default"] for c in report.home_candidates))
+        profile = api30_profile()
+        profile["match"] = {"sdkMin": 23, "sdkMax": 23,
+                            "buildProperties": report.environment["buildProperties"].copy()}
+        candidates = ["com.example.alternatehome"]
+        report.packages[candidates[0]] = {"system": True, "version_code": 1}
+        report.package_flags[candidates[0]] = 0
+        policy = qualified_case()[2]
+        policy["profileHash"] = profile_hash(profile)
+        policy["firmwareHash"] = environment_key(report.environment)
+        policy["candidateListHash"] = candidate_list_hash(candidates)
+        with trusted_policy(policy), self.assertRaisesRegex(PolicyError, "HOME ownership"):
+            validate_debloat_policy(report, profile, policy, candidates)
+        self.assertEqual(fake.mutating_calls, [])
+
+    def test_malformed_status_raises_policy_error(self):
+        report, profile, policy, candidates, fake = qualified_case()
+        for status in ([], {}, ["qualified"], {"status": "qualified"}, 0, False, None):
+            with self.subTest(status=status), self.assertRaises(PolicyError):
+                validate_debloat_policy(report, profile, dict(policy, status=status), candidates)
+        self.assertEqual(fake.mutating_calls, [])
 
     def test_policy_hashes_and_qualification_required(self):
         report, profile, policy, candidates, fake = qualified_case()
         validate_debloat_policy(report, profile, policy, candidates)
 
         def refused(report=report, profile=profile, policy=policy, candidates=candidates):
-            with self.assertRaises(PolicyError):
+            with trusted_policy(policy), self.assertRaises(PolicyError):
                 validate_debloat_policy(report, profile, policy, candidates)
 
         for status in ("unqualified", "reported", "device-tested", "QUALIFIED", None):

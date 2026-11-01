@@ -705,6 +705,9 @@ def candidate_list_hash(candidates):
 
 POLICY_VERSION = 1
 POLICY_STATUSES = frozenset({"unqualified", "qualified"})
+# Release-maintainer pins over complete policy content, never imported authorization.
+# Empty until a bundled policy has actual firmware/dependency qualification evidence.
+_TRUSTED_QUALIFIED_POLICY_HASHES = frozenset()
 _POLICY_FIELDS = frozenset({"policyVersion", "profileId", "profileHash", "firmwareHash",
                             "candidateList", "candidateListHash", "status",
                             "protectedComponents", "unresolvedDependencies", "qualification",
@@ -761,7 +764,7 @@ def _check_policy(policy):
     _policy_strings([policy["candidateList"]], "candidateList", 1, MAX_PROPERTY_BYTES)
     if "notes" in policy:
         _policy_strings([policy["notes"]], "notes", 1, MAX_NOTES_BYTES)
-    if policy["status"] not in POLICY_STATUSES:
+    if not isinstance(policy["status"], str) or policy["status"] not in POLICY_STATUSES:
         raise PolicyError("status must be one of %s" % ", ".join(sorted(POLICY_STATUSES)))
 
     components = _policy_strings(policy["protectedComponents"], "protectedComponents",
@@ -809,6 +812,10 @@ def validate_debloat_policy(report, profile, policy, candidates):
     if policy["status"] != "qualified":
         raise PolicyError("debloat policy for %s is %s; writes are refused"
                           % (policy["profileId"], policy["status"]))
+    content = json.dumps(policy, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    if digest not in _TRUSTED_QUALIFIED_POLICY_HASHES:
+        raise PolicyError("policy has no trusted bundled qualification; writes are refused")
     try:
         profile = validate_profile_object(profile, _INT_MAX)
     except ProfileFormatError as error:
@@ -875,8 +882,7 @@ def _home_packages(report):
     unresolved = set(report.unresolved_facts)
     if "home.default" in unresolved:
         raise PolicyError("default HOME is unresolved")
-    defaults = [c for c in report.home_candidates if c.get("default")]
-    if "home.candidates" in unresolved and not defaults:
+    if "home.candidates" in unresolved:
         raise PolicyError("HOME ownership is unknown")
     return {c["component"].split("/", 1)[0] for c in report.home_candidates}
 
