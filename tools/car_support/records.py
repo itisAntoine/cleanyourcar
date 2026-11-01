@@ -105,6 +105,30 @@ def write_private_json(path, data):
             temp.unlink()
 
 
+def _read_anchored(path):
+    data = _read_json(path)
+    anchor = _read_json(path.with_suffix(".integrity.json"))
+    if (not isinstance(anchor, dict) or set(anchor) != {"schema_version", "sha256"}
+            or type(anchor["schema_version"]) is not int or anchor["schema_version"] != 1
+            or anchor["sha256"] != content_hash(data)):
+        raise RecordError("saved content does not match its durable integrity anchor: %s" % path)
+    return data
+
+
+def _write_anchored(path, data, immutable=False):
+    anchor_path = path.with_suffix(".integrity.json")
+    exists = path.exists() or path.is_symlink() or anchor_path.exists() or anchor_path.is_symlink()
+    previous = _read_anchored(path) if exists else None
+    if immutable and exists and previous != data:
+        raise RecordError("immutable snapshot cannot replace previously anchored originals")
+    # This is deliberately a fail-closed two-file commit, not a claimed atomic transaction.
+    # If interrupted between replacements the mismatch remains visible and cannot be repaired
+    # from new device observations. Both files individually retain complete durable JSON.
+    write_private_json(path, data)
+    if not exists or previous != data:
+        write_private_json(anchor_path, {"schema_version": 1, "sha256": content_hash(data)})
+
+
 @dataclass(frozen=True)
 class RecoveryRecord:
     operation_id: str
@@ -242,10 +266,20 @@ class RecordStore:
                                          (plan.target.binding_hash, plan.android_user))
         aggregate = {"target": plan.to_dict()["target"], "package_flags": {}, "settings": {},
                      "home": copy.deepcopy(report.home_candidates), "installed_packages": {}}
-        if original_path.exists():
-            aggregate = _read_json(original_path)
+        if original_path.exists() or original_path.with_suffix(".integrity.json").exists():
+            aggregate = _read_anchored(original_path)
             if aggregate.get("target") != plan.to_dict()["target"]:
                 raise RecordError("earliest originals belong to a different firmware; fresh recovery required")
+        # Every previously saved record is independent original truth. Never reconstruct a
+        # missing aggregate or accept edits (even with a replaced aggregate anchor) that
+        # conflict with an existing snapshot for this target/user.
+        for snapshot_path in self.root.glob("*/snapshot.json"):
+            saved = _read_anchored(snapshot_path)
+            target = saved.get("target", {})
+            if (target.get("binding_hash") == plan.target.binding_hash
+                    and target.get("android_user") == plan.android_user):
+                self._load(snapshot_path.parent.name)
+                self._check_originals(saved, aggregate)
         packages = []
         setting_keys = []
         for action in plan.actions:
@@ -285,8 +319,8 @@ class RecordStore:
             record = previous
         # Persist the shared earliest originals first. An orphaned aggregate is safe: it cannot
         # authorize a command, but prevents a later retry from replacing the first observation.
-        write_private_json(original_path, aggregate)
-        write_private_json(snapshot, record.snapshot_dict())
+        _write_anchored(original_path, aggregate)
+        _write_anchored(snapshot, record.snapshot_dict(), immutable=True)
         return self._load(plan.operation_id)
 
     def load(self, operation_id):
@@ -301,7 +335,7 @@ class RecordStore:
         directory = self._directory(operation_id)
         _private_directory(self.root)
         _private_directory(directory)
-        data = _read_json(directory / "snapshot.json")
+        data = _read_anchored(directory / "snapshot.json")
         plan = OperationPlan.from_dict(data["plan"])
         values = dict(data, target=TargetIdentity(**data["target"]), plan=plan)
         record = RecoveryRecord(**values)
@@ -310,6 +344,10 @@ class RecordStore:
                 or record.profile_hash != plan.profile_hash or record.list_hash != plan.list_hash
                 or record.artifact_hash != plan.artifact_hash):
             raise RecordError("snapshot binding/hash mismatch")
+        aggregate_path = self.root / ".originals" / ("%s-user-%d.json" %
+                                                   (record.target.binding_hash, record.android_user))
+        _private_directory(aggregate_path.parent)
+        self._check_originals(data, _read_anchored(aggregate_path))
         for action in plan.actions:
             if action["type"] == "SET_PACKAGE_ENABLED_STATE":
                 value = record.original_package_flags.get(action["package"])
@@ -319,6 +357,22 @@ class RecordStore:
         return RecoveryRecord(**dict(values, events=tuple(events),
                                      event_references=tuple(e["hash"] for e in events),
                                      journal_torn=bool(torn)))
+
+    def _check_originals(self, snapshot, aggregate):
+        if snapshot["target"] != aggregate.get("target"):
+            raise RecordError("snapshot and earliest-original aggregate targets differ")
+        if snapshot["original_home"] != aggregate.get("home"):
+            raise RecordError("snapshot and aggregate disagree on original HOME")
+        for snapshot_key, aggregate_key in (
+                ("original_package_flags", "package_flags"),
+                ("original_settings", "settings"),
+                ("installed_package_identities", "installed_packages")):
+            original = aggregate.get(aggregate_key)
+            if not isinstance(original, dict):
+                raise RecordError("invalid earliest-original aggregate field: " + aggregate_key)
+            for key, value in snapshot[snapshot_key].items():
+                if key not in original or canonical(value) != canonical(original[key]):
+                    raise RecordError("snapshot and aggregate disagree on original " + key)
 
     def _validate_event(self, plan, event, events):
         if not isinstance(event, dict):

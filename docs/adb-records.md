@@ -71,6 +71,43 @@ interruption leaves either the prior or new complete snapshot, not partial JSON.
 An aggregate persisted before an interrupted operation snapshot is retained:
 it cannot authorize a write but protects the earliest observation.
 
+### Original-state integrity
+
+Each snapshot and aggregate has a separate private `.integrity.json` sidecar
+containing the SHA-256 of its **complete canonical saved content**. The digest is
+persisted when the original content is saved, not generated from whatever is on
+disk during loading. Loading, retrying and extending verify these anchors first.
+Missing, malformed or mismatched anchors refuse; the tooling does not regenerate
+them from current device observations or automatically upgrade unanchored older
+records. The snapshot anchor is immutable; the aggregate anchor changes only
+after a validated extension that preserves every previously saved original.
+
+Every loaded snapshot must also agree with its anchored target/user aggregate
+on HOME and its individual package flags, settings and installed identities.
+Before saving an extension, existing snapshots are checked as independent
+original truth. Editing an aggregate and its sidecar cannot silently change
+originals already held in a separately anchored snapshot. Deleting the aggregate
+and sidecar while snapshots remain does not permit reconstructing new originals.
+`record_hash` is useful for confirmation binding only **after** these checks;
+a recomputed hash by itself is not proof of original-state integrity.
+
+Data and sidecar are individually atomic/durable, but their two replacements
+are **not a multi-file atomic transaction**. Data is persisted before its anchor.
+An interruption between the replacements leaves complete files with a missing
+or mismatched anchor and blocks load/retry/extension, including prior operations
+that depend on that aggregate. Old snapshot files/anchors and complete aggregate
+content remain available for explicit manual investigation; there is no silent
+repair, success inference, or write authorization. An interruption before
+replacing existing data leaves its previously valid pair usable. Keep the whole
+private record tree together when backing it up.
+
+These checks detect edits/corruption relative to retained independent anchors.
+They are **not tamper-proof authentication against the local owner**, who can
+replace all relevant snapshots, aggregates, sidecars, backups or trusted source
+code. Coordinated replacement/rollback of all original-truth anchors is outside
+the guarantee. No remote trust service, signing key or hardware qualification
+is implied.
+
 Locks use nonblocking `flock` and are held by `with store.lock(plan.target):`
 through an entire future executor batch. Save/load/append also lock internally;
 same-thread/process nesting on the same store and target is supported. Lock

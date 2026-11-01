@@ -40,6 +40,163 @@ class RecordsTest(NoProcessTestCase):
     def save(self, plan=None, report=None):
         return self.store.save_original(plan or self.plan, report or self.report)
 
+    def aggregate_path(self):
+        return self.root / ".originals" / ("%s-user-%d.json" %
+                                           (self.plan.target.binding_hash, self.plan.android_user))
+
+    def test_snapshot_original_edit_refused_before_confirmation(self):
+        self.report.package_flags[self.candidates[0]] = 0
+        first = self.save()
+        path = self.root / self.plan.operation_id / "snapshot.json"
+        data = json.loads(path.read_text())
+        data["original_package_flags"][self.candidates[0]] = 1
+        path.write_text(json.dumps(data))
+        with self.assertRaises(RecordError):
+            self.store.load(self.plan.operation_id)
+        with self.assertRaises(RecordError):
+            self.save()
+        self.assertEqual(first.original_package_flags[self.candidates[0]], 0)
+        self.assertEqual(self.fake.mutating_calls, [])
+
+    def test_snapshot_anchor_covers_home_settings_and_installed_identities(self):
+        self.save()
+        path = self.root / self.plan.operation_id / "snapshot.json"
+        original = path.read_bytes()
+        for field, value in (
+                ("original_home", []),
+                ("original_settings", {"system/screen_brightness": "999"}),
+                ("installed_package_identities", {self.candidates[0]: None})):
+            with self.subTest(field=field):
+                data = json.loads(original)
+                data[field] = value
+                path.write_text(json.dumps(data))
+                with self.assertRaises(RecordError):
+                    self.store.load(self.plan.operation_id)
+        path.write_bytes(original)
+        self.store.load(self.plan.operation_id)
+
+    def test_aggregate_original_edit_refuses_load_retry_and_extension(self):
+        self.save()
+        path = self.aggregate_path()
+        data = json.loads(path.read_text())
+        data["package_flags"][self.candidates[0]] = 1
+        path.write_text(json.dumps(data))
+        with self.assertRaises(RecordError):
+            self.store.load(self.plan.operation_id)
+        for plan in (self.plan, replace(self.plan, operation_id="edited-aggregate-extension")):
+            with self.subTest(operation=plan.operation_id), self.assertRaises(RecordError):
+                self.save(plan)
+        self.assertEqual(json.loads(path.read_text())["package_flags"][self.candidates[0]], 1)
+
+    def test_missing_or_broken_integrity_anchors_are_not_regenerated(self):
+        for source in ("snapshot", "aggregate"):
+            for damage in ("missing", "malformed", "wrong_hash"):
+                with self.subTest(source=source, damage=damage):
+                    self.root = Path(self.directory.name) / ("%s-%s" % (source, damage))
+                    self.store = RecordStore(self.root)
+                    self.save()
+                    path = (self.root / self.plan.operation_id / "snapshot.json"
+                            if source == "snapshot" else self.aggregate_path())
+                    anchor = path.with_suffix(".integrity.json")
+                    anchor.unlink(missing_ok=True)
+                    if damage != "missing":
+                        anchor.touch(mode=0o600)
+                        anchor.write_text("{" if damage == "malformed" else
+                                          json.dumps({"schema_version": 1, "sha256": "0" * 64}))
+                    before = anchor.read_bytes() if anchor.exists() else None
+                    with self.assertRaises(RecordError):
+                        self.store.load(self.plan.operation_id)
+                    with self.assertRaises(RecordError):
+                        self.save()
+                    self.assertEqual(anchor.read_bytes() if anchor.exists() else None, before)
+
+    def test_snapshot_and_aggregate_original_truth_must_agree(self):
+        from car_support.operations import content_hash
+        self.save()
+        path = self.root / self.plan.operation_id / "snapshot.json"
+        data = json.loads(path.read_text())
+        data["original_package_flags"][self.candidates[0]] = 1
+        path.write_text(json.dumps(data))
+        anchor = path.with_suffix(".integrity.json")
+        if not anchor.exists():
+            anchor.touch(mode=0o600)
+        anchor.write_text(json.dumps({"schema_version": 1, "sha256": content_hash(data)}))
+        with self.assertRaises(RecordError):
+            self.store.load(self.plan.operation_id)
+
+    def test_reanchored_aggregate_cannot_change_existing_records_truth(self):
+        from car_support.operations import content_hash
+        self.save()
+        path = self.aggregate_path()
+        data = json.loads(path.read_text())
+        data["package_flags"][self.candidates[0]] = 1
+        path.write_text(json.dumps(data))
+        path.with_suffix(".integrity.json").write_text(json.dumps(
+            {"schema_version": 1, "sha256": content_hash(data)}))
+        with self.assertRaises(RecordError):
+            self.store.load(self.plan.operation_id)
+        with self.assertRaises(RecordError):
+            self.save(replace(self.plan, operation_id="reanchored-extension"))
+
+    def test_deleted_aggregate_and_anchor_cannot_reconstruct_original_truth(self):
+        self.save()
+        self.aggregate_path().unlink()
+        self.aggregate_path().with_suffix(".integrity.json").unlink()
+        changed = copy.deepcopy(self.report)
+        changed.package_flags[self.candidates[0]] = 1
+        with self.assertRaises(RecordError):
+            self.save(replace(self.plan, operation_id="missing-original-truth"), changed)
+        self.assertFalse(self.aggregate_path().exists())
+
+    def test_initial_snapshot_anchor_interruption_refuses_retry(self):
+        import car_support.records as records
+        original_replace = records.os.replace
+
+        def interrupt_snapshot_anchor(source, destination):
+            if Path(destination).name == "snapshot.integrity.json":
+                raise OSError(errno.ENOSPC, "snapshot anchor interrupted")
+            return original_replace(source, destination)
+
+        with mock.patch("car_support.records.os.replace", side_effect=interrupt_snapshot_anchor):
+            with self.assertRaises(RecordError):
+                self.save()
+        path = self.root / self.plan.operation_id / "snapshot.json"
+        before = path.read_bytes()
+        with self.assertRaises(RecordError):
+            self.store.load(self.plan.operation_id)
+        with self.assertRaises(RecordError):
+            self.save()
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(path.with_suffix(".integrity.json").exists())
+        self.assertEqual(self.fake.mutating_calls, [])
+
+    def test_interrupted_integrity_commit_refuses_without_repair(self):
+        import car_support.records as records
+        first = self.save()
+        changed = copy.deepcopy(self.report)
+        changed.packages["com.example.extra"] = copy.deepcopy(changed.packages[self.candidates[0]])
+        changed.package_flags["com.example.extra"] = 0
+        extended = replace(self.plan, operation_id="integrity-interruption", actions=self.plan.actions + (
+            {"type": "SET_PACKAGE_ENABLED_STATE", "package": "com.example.extra", "value": 3},))
+        original_replace = records.os.replace
+
+        def interrupt_anchor(source, destination):
+            if str(destination).endswith(".integrity.json"):
+                raise OSError(errno.ENOSPC, "anchor commit interrupted")
+            return original_replace(source, destination)
+
+        with mock.patch("car_support.records.os.replace", side_effect=interrupt_anchor):
+            with self.assertRaises(RecordError):
+                self.save(extended, changed)
+        self.assertEqual(self.fake.mutating_calls, [])
+        self.assertEqual(first.original_package_flags, self.plan.preconditions["package_flags"])
+        # The complete aggregate and old anchor survive, but a mismatched pair cannot
+        # authorize either old or new operations or silently bless later observations.
+        with self.assertRaises(RecordError):
+            self.store.load(self.plan.operation_id)
+        with self.assertRaises(RecordError):
+            self.save(extended, changed)
+
     def test_snapshot_failure_means_zero_writes(self):
         with mock.patch("car_support.records.os.fsync",
                         side_effect=OSError(errno.ENOSPC, "disk full")):
