@@ -66,7 +66,7 @@ generic mode:
   broadcasts. Metadata and source selection are shown only when they actually work.
 - **HUD:** stays off.
 - **ADB tooling:** only read-only discovery is permitted; no writes. The tooling itself is
-  not part of this branch yet.
+  tested offline, but no firmware has physical write qualification.
 
 Matching uses the real SDK level and the build facts, not the advertised Android version.
 Some units report a fake `ro.build.version.release`; the XYAuto reference unit reports
