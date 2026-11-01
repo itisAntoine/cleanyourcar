@@ -1007,8 +1007,10 @@ def export_candidate(report):
         raise PolicyError("report has no exact build properties; a candidate would match "
                           "every device of this SDK")
     reported_platform = source.get("platform")
-    platform = (reported_platform if isinstance(reported_platform, str)
-                and reported_platform in PLATFORMS else "aftermarket")
+    if not isinstance(reported_platform, str) or reported_platform not in PLATFORMS:
+        raise PolicyError("report platform is missing, malformed or unsupported; resolve this "
+                          "fact before exporting a candidate")
+    platform = reported_platform
     digest = hashlib.sha256(json.dumps([source["sdk"], properties], sort_keys=True)
                             .encode("utf-8")).hexdigest()[:12]
     evidence = {"classification": "reported",

@@ -334,7 +334,9 @@ class CliContractTest(unittest.TestCase):
         SCRATCH.mkdir(exist_ok=True)
         directory = Path(tempfile.mkdtemp(dir=str(SCRATCH)))
         self.addCleanup(shutil.rmtree, str(directory), True)
-        cases = [("platform", v) for v in ([], {}, ["aftermarket"], {"a": 1})]
+        cases = [("platform", v) for v in ([], {}, ["aftermarket"], {"a": 1}, 7, 1.5, True,
+                                           False, None, "", "car", "AAOS")]
+        cases += [("platform", "__missing__")]
         cases += [("buildProperties", v) for v in ([], ["board"], "board", 7, None)]
         cases += [("environment", v) for v in ([], "x", None)]
         cases += [("sdk", v) for v in ([], {}, "30", True)]
@@ -344,19 +346,17 @@ class CliContractTest(unittest.TestCase):
                 report["environment"] = value
             elif field == "buildProperties":
                 report["environment"]["buildProperties"] = value
+            elif value == "__missing__":
+                del report["environment"][field]
             else:
                 report["environment"][field] = value
             with self.subTest(field=field, value=value):
                 code, output, err = self.export(report, directory)
+                self.assertEqual(code, 1, err)
+                self.assertNotIn("Traceback", err)
                 if field == "platform":
-                    # An unrecognized platform value is not trusted; the candidate is still valid.
-                    self.assertEqual(code, 0, err)
-                    self.assertEqual(json.loads(output.read_text())["platform"], "aftermarket")
-                    output.unlink()
-                else:
-                    self.assertEqual(code, 1, err)
-                    self.assertNotIn("Traceback", err)
-                    self.assertFalse(output.exists())
+                    self.assertIn("platform", err)
+                self.assertFalse(output.exists())
         source = directory / "list.json"
         source.write_text("[1, 2]", encoding="utf-8")
         code, _, err = self.run_main(["export-profile", "--report", str(source),
