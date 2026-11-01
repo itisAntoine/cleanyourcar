@@ -140,17 +140,14 @@ public final class CarIntentRouter {
 
     /**
      * Effective app for a role: user choice, then accepted profile default, then the built-in
-     * XYAuto apps only for existing XYAuto installs. Generic installs never get XYAuto defaults.
+     * XYAuto apps only after accepting the XYAuto profile. Legacy preference presence is not
+     * adapter evidence.
      */
     public static ResolvedRole resolveRole(LauncherConfiguration configuration, Role role) {
-        boolean xyAuto = configuration.legacyXyAutoUser
-                || DeviceProfile.ADAPTER_XYAUTO.equals(configuration.acceptedAdapterId);
+        boolean xyAuto = DeviceProfile.ADAPTER_XYAUTO.equals(configuration.acceptedAdapterId);
         RoleSelection selection = configuration.roleOverrides.get(role);
         if (selection == null) {
             selection = configuration.profileRoleDefaults.get(role);
-        }
-        if (selection == null && configuration.legacyXyAutoUser) {
-            selection = LauncherConfiguration.builtInRole(role);
         }
         if (selection == null) {
             return new ResolvedRole(role, null, ResolvedRole.Unavailable.NOT_CONFIGURED, xyAuto);

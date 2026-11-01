@@ -74,6 +74,7 @@ public class NavBridgeService extends Service {
     private static StatusObserver observer;
 
     private BridgeSession session;
+    private final BridgeDispatchGate dispatchGate = new BridgeDispatchGate();
 
     public static Status latestStatus() {
         return latest;
@@ -201,10 +202,15 @@ public class NavBridgeService extends Service {
             return START_NOT_STICKY;
         }
 
+        dispatchGate.invalidate();
         if (session != null) session.stop();
         Context app = getApplicationContext();
+        final long dispatchGeneration = dispatchGate.activate(config.authorization());
         BridgeRequestHandler handler = new BridgeRequestHandler(config.authorization(),
-                destination -> MAIN.post(() -> NavBridgeProtocol.dispatchToLauncher(app, destination)));
+                (destination, credential) -> dispatchGate.enqueue(dispatchGeneration, credential,
+                        destination, MAIN::post,
+                        () -> BridgeConfiguration.load(app).authorization(),
+                        value -> NavBridgeProtocol.dispatchToLauncher(app, value)));
         session = new BridgeSession(new BleGattNavServer(this, handler),
                 new HotspotBurstServer(handler, NavBridgeProtocol.PORT, null));
         final BridgeSession current = session;
@@ -228,6 +234,7 @@ public class NavBridgeService extends Service {
             recordError(this, error.length() == 0 ? null : error.toString());
             Status failed = new Status(false, changed.bleState(), changed.lanState(),
                     changed.bleDetail(), changed.lanDetail(), reasons);
+            dispatchGate.invalidate();
             session = null;
             changed.stop();
             leaveForeground();
@@ -241,6 +248,7 @@ public class NavBridgeService extends Service {
     }
 
     private void stopBridge(Set<BridgeLifecyclePolicy.Reason> reasons) {
+        dispatchGate.invalidate();
         if (session != null) {
             BridgeSession old = session;
             session = null;
@@ -390,6 +398,7 @@ public class NavBridgeService extends Service {
 
     @Override
     public void onDestroy() {
+        dispatchGate.invalidate();
         if (session != null) {
             BridgeSession old = session;
             session = null;

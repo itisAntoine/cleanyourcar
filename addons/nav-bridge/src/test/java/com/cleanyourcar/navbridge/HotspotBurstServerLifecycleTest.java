@@ -56,7 +56,8 @@ public class HotspotBurstServerLifecycleTest {
     private static BridgeRequestHandler handler() {
         BridgeAuthorization.Credential credential = BridgeAuthorization.newCredential(new SecureRandom());
         return new BridgeRequestHandler(
-                BridgeAuthorization.forClient(credential.clientId, credential.token), destination -> { });
+                BridgeAuthorization.forClient(credential.clientId, credential.token),
+                (destination, presentedCredential) -> { });
     }
 
     private static int freePort() throws IOException {

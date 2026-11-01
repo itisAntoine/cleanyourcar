@@ -110,6 +110,9 @@ public final class I18n {
     public static final int KEY_HUD_NO_PERMISSION = 84;
     public static final int KEY_HUD_REVERSE = 85;
     public static final int KEY_SYSTEM_RESTRICTED = 86;
+    public static final int KEY_CONFIGURATION_IMPORT_TITLE = 87;
+    public static final int KEY_CONFIGURATION_IMPORT_NOTICE = 88;
+    public static final int KEY_CONFIGURATION_IMPORTED = 89;
 
     private I18n() {
     }
@@ -331,7 +334,7 @@ public final class I18n {
             case KEY_SETUP_AAOS: return "Android Automotive: hệ thống có thể chặn một số chức năng; ứng dụng sẽ không vượt qua các giới hạn này.";
             case KEY_SETUP_PROFILE: return "Hồ sơ thiết bị";
             case KEY_SETUP_CHECK: return "Kiểm tra thiết bị này";
-            case KEY_SETUP_IMPORT: return "Nhập hồ sơ…";
+            case KEY_SETUP_IMPORT: return "Nhập hồ sơ hoặc cấu hình…";
             case KEY_SETUP_EXPORT: return "Xuất cấu hình…";
             case KEY_SETUP_ROLES: return "Ứng dụng cho từng chức năng";
             case KEY_SETUP_HOME: return "Đặt làm màn hình chính (tùy chọn)";
@@ -370,6 +373,9 @@ public final class I18n {
             case KEY_PROFILE_APP_TOO_OLD: return "Hồ sơ cần phiên bản ứng dụng mới hơn.";
             case KEY_PROFILE_TOO_MANY: return "Hồ sơ có quá nhiều gói ứng dụng.";
             case KEY_EXPORT_DONE: return "Đã xuất cấu hình.";
+            case KEY_CONFIGURATION_IMPORT_TITLE: return "Nhập cấu hình";
+            case KEY_CONFIGURATION_IMPORT_NOTICE: return "Hồ sơ thiết bị và kiểm chứng cục bộ không được nhập. Chỉ các tùy chọn ứng dụng được nhập. Chế độ vị trí hiện tại sẽ yêu cầu xác nhận quyền riêng tư trên thiết bị này.";
+            case KEY_CONFIGURATION_IMPORTED: return "Đã nhập tùy chọn cấu hình.";
             case KEY_FILE_ERROR: return "Không đọc/ghi được tệp.";
             case KEY_ROLE_NAVIGATION: return "Dẫn đường";
             case KEY_ROLE_BT_MUSIC: return "Nhạc Bluetooth";
@@ -399,7 +405,7 @@ public final class I18n {
             case KEY_SETUP_AAOS: return "Android Automotive: the system may block some features; this app respects those limits.";
             case KEY_SETUP_PROFILE: return "Device profile";
             case KEY_SETUP_CHECK: return "Check this device";
-            case KEY_SETUP_IMPORT: return "Import profile…";
+            case KEY_SETUP_IMPORT: return "Import profile or settings…";
             case KEY_SETUP_EXPORT: return "Export settings…";
             case KEY_SETUP_ROLES: return "App for each function";
             case KEY_SETUP_HOME: return "Set as Home screen (optional)";
@@ -438,6 +444,9 @@ public final class I18n {
             case KEY_PROFILE_APP_TOO_OLD: return "The profile needs a newer app version.";
             case KEY_PROFILE_TOO_MANY: return "The profile lists too many packages.";
             case KEY_EXPORT_DONE: return "Settings exported.";
+            case KEY_CONFIGURATION_IMPORT_TITLE: return "Import settings";
+            case KEY_CONFIGURATION_IMPORT_NOTICE: return "Device profiles and local validation are not imported. Only app settings are transferred. Current-location mode requires fresh local consent on this device.";
+            case KEY_CONFIGURATION_IMPORTED: return "Settings imported.";
             case KEY_FILE_ERROR: return "Could not read or write the file.";
             case KEY_ROLE_NAVIGATION: return "Navigation";
             case KEY_ROLE_BT_MUSIC: return "Bluetooth music";

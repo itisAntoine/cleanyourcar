@@ -177,6 +177,23 @@ public class ProfileCodecTest {
     }
 
     @Test
+    public void parse_rejectsSharedNonStandardJsonSyntax() throws Exception {
+        for (String name : Arrays.asList("malformed-duplicate-key.json",
+                "malformed-comment.json", "malformed-single-quote.json",
+                "malformed-trailing-comma.json", "malformed-number.json")) {
+            assertEquals(name, "malformed", reasonOf(fixture(name), 1));
+        }
+
+        String valid = fixture("valid-generic.json");
+        for (String numeric : Arrays.asList("1.0", "1e0", "-0")) {
+            String nonInteger = valid.replace("\"schemaVersion\": 1,",
+                    "\"schemaVersion\": " + numeric + ",");
+            assertTrue(nonInteger.contains("\"schemaVersion\": " + numeric + ","));
+            assertEquals(numeric, "bad_type", reasonOf(nonInteger, 1));
+        }
+    }
+
+    @Test
     public void parse_rejectsOversizeUtf8AndTooManyPackages() throws Exception {
         String base = fixture("valid-generic.json");
         int baseBytes = base.getBytes(StandardCharsets.UTF_8).length;

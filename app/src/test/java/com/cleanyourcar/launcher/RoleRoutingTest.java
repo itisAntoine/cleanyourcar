@@ -4,6 +4,7 @@ import com.cleanyourcar.launcher.CarIntentRouter.LaunchResult;
 import com.cleanyourcar.launcher.CarIntentRouter.ResolvedRole;
 import com.cleanyourcar.launcher.config.ConfigurationStore;
 import com.cleanyourcar.launcher.config.LauncherConfiguration;
+import com.cleanyourcar.launcher.config.NavigationReference;
 import com.cleanyourcar.launcher.config.RoleSelection;
 import com.cleanyourcar.launcher.config.RoleSelection.Role;
 
@@ -11,6 +12,7 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -127,19 +129,18 @@ public class RoleRoutingTest {
         assertEquals(LaunchResult.Status.BLOCKED, nav.status);
         assertTrue(navTransport.calls.isEmpty());
 
-        // Existing XYAuto installs keep their current built-in apps.
+        // Upgraded installs without an accepted profile use generic behavior and no vendor roles.
         ConfigurationStore legacyStore = store();
         legacyStore.migrateLegacy(Collections.<String, Object>emptyMap(), true);
         LauncherConfiguration legacy = legacyStore.current();
-        assertTrue(legacy.legacyXyAutoUser);
+        assertFalse(legacy.legacyXyAutoUser);
         ResolvedRole equalizer = CarIntentRouter.resolveRole(legacy, Role.EQUALIZER);
-        assertTrue(equalizer.isAvailable());
-        assertEquals(CarIntentRouter.PKG_EQUALIZER, equalizer.selection.packageName);
+        assertFalse(equalizer.isAvailable());
+        assertNull(equalizer.selection);
         FakeTransport legacyTransport = new FakeTransport();
         CarIntentRouter.launchRole(CarIntentRouter.resolveRole(legacy, Role.DASHCAM),
                 legacyTransport);
-        assertEquals(Collections.singletonList("component " + CarIntentRouter.PKG_DASHCAM + "/"
-                + CarIntentRouter.CLS_DASHCAM_MAIN), legacyTransport.calls);
+        assertTrue(legacyTransport.calls.isEmpty());
 
         // A generic install may not use an XYAuto-only strategy, nor a foreign component.
         ConfigurationStore genericStore = newInstallStore();
@@ -172,7 +173,7 @@ public class RoleRoutingTest {
         // Setup is offered once to generic installs and never forced again after a refusal.
         assertTrue(SetupFlow.shouldAutoOpen(false, false, false));
         assertFalse(SetupFlow.shouldAutoOpen(true, false, false));
-        assertFalse(SetupFlow.shouldAutoOpen(false, true, false));
+        assertTrue(SetupFlow.shouldAutoOpen(false, true, false));
         assertFalse(SetupFlow.shouldAutoOpen(false, false, true));
 
         // Location permission is requested only for the feature that needs it.
@@ -195,6 +196,13 @@ public class RoleRoutingTest {
         assertTrue(flow.isConsented(SetupFlow.Feature.HOME));
         assertEquals(SetupFlow.Entry.HOME, flow.entry());
         assertEquals(EnumSet.of(SetupFlow.Feature.HOME), flow.consentedFeatures());
+    }
+
+    @Test
+    public void importingCurrentLocationModeRequiresFreshLocalConsent() {
+        SetupFlow flow = new SetupFlow(EnumSet.of(SetupFlow.Feature.CURRENT_LOCATION));
+        flow.onImportedReferenceMode(NavigationReference.Mode.CURRENT_LOCATION);
+        assertFalse(flow.isConsented(SetupFlow.Feature.CURRENT_LOCATION));
     }
 
     /** Counts overlay requests so tests can prove the HUD only follows a real launch. */
@@ -255,9 +263,8 @@ public class RoleRoutingTest {
     }
 
     @Test
-    public void restrictedLaunchIsReportedWithoutTryingAnotherRouteOnAaos() throws IOException {
-        ConfigurationStore legacyStore = store();
-        legacyStore.migrateLegacy(Collections.<String, Object>emptyMap(), true);
+    public void restrictedLaunchIsReportedWithoutTryingAnotherRouteOnAaos() throws Exception {
+        ConfigurationStore legacyStore = acceptedXyAutoStore();
         FakeTransport restricted = new FakeTransport();
         restricted.outcome = LaunchResult.failed(LaunchResult.Reason.NOT_PERMITTED);
 
@@ -284,9 +291,8 @@ public class RoleRoutingTest {
     }
 
     @Test
-    public void refusedRouteStillFallsBackOffAaos() throws IOException {
-        ConfigurationStore legacyStore = store();
-        legacyStore.migrateLegacy(Collections.<String, Object>emptyMap(), true);
+    public void refusedRouteStillFallsBackOffAaos() throws Exception {
+        ConfigurationStore legacyStore = acceptedXyAutoStore();
 
         // On aftermarket firmware NOT_PERMITTED usually means a protected component.
         FakeTransport refused = new FakeTransport();
@@ -356,6 +362,17 @@ public class RoleRoutingTest {
     private static ConfigurationStore newInstallStore() throws IOException {
         ConfigurationStore store = store();
         store.migrateLegacy(Collections.<String, Object>emptyMap(), false);
+        return store;
+    }
+
+    private static ConfigurationStore acceptedXyAutoStore() throws Exception {
+        ConfigurationStore store = store();
+        store.migrateLegacy(Collections.<String, Object>emptyMap(), true);
+        try (InputStream profile = RoleRoutingTest.class.getClassLoader()
+                .getResourceAsStream("valid-xyauto.json")) {
+            if (profile == null) throw new IOException("missing XYAuto profile fixture");
+            store.applyProfile(store.importProfile(profile));
+        }
         return store;
     }
 

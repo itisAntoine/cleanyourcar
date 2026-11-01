@@ -233,6 +233,21 @@ class ProfileContractTest(NoProcessTestCase):
         self.assertEqual(reason_of(b"\xff\xfe{}"), "malformed")
 
 
+    def test_strict_json_acceptance_matches_shared_malicious_fixtures(self):
+        for name in ("malformed-duplicate-key.json", "malformed-comment.json",
+                     "malformed-single-quote.json", "malformed-trailing-comma.json",
+                     "malformed-number.json"):
+            with self.subTest(fixture=name):
+                self.assertEqual(reason_of(fixture_text(name)), "malformed")
+
+        valid = fixture_text("valid-generic.json")
+        for numeric in ("1.0", "1e0", "-0"):
+            with self.subTest(number=numeric):
+                document = valid.replace('"schemaVersion": 1,',
+                                         '"schemaVersion": %s,' % numeric)
+                self.assertEqual(reason_of(document), "bad_type")
+
+
 class CandidateListTest(NoProcessTestCase):
 
     def test_bom_crlf_comments_normalize_before_validation(self):

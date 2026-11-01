@@ -185,15 +185,24 @@ public class IntegrationControllerTest {
     }
 
     @Test
-    public void adapterSelection_usesXyAutoOnlyForXyAutoProfileOrLegacyUser() {
+    public void adapterSelection_requiresExplicitlyAcceptedXyAutoProfile() {
         assertEquals(XYAUTO, IntegrationController.selectAdapterId(XYAUTO, false));
         assertEquals(XYAUTO, IntegrationController.selectAdapterId(XYAUTO, true));
         assertEquals(GENERIC, IntegrationController.selectAdapterId(GENERIC, false));
         assertEquals(GENERIC, IntegrationController.selectAdapterId(GENERIC, true));
-        // Existing users without an accepted profile keep today's XYAuto behavior.
-        assertEquals(XYAUTO, IntegrationController.selectAdapterId(null, true));
+        // Legacy preference presence and upgrade status do not select a vendor adapter.
+        assertEquals(GENERIC, IntegrationController.selectAdapterId(null, true));
         assertEquals(GENERIC, IntegrationController.selectAdapterId(null, false));
         assertEquals(GENERIC, IntegrationController.selectAdapterId("unknown-adapter", true));
+
+        FakeBroadcastTransport broadcasts = new FakeBroadcastTransport();
+        IntegrationController migratedUpgrade = controller(
+                IntegrationController.selectAdapterId(null, true), broadcasts,
+                new FakeMediaKeyTransport(), true);
+        migratedUpgrade.start(null, new RecordingListener());
+        migratedUpgrade.execute(MediaCommand.PLAY_PAUSE);
+        assertTrue(broadcasts.sentCommands.isEmpty());
+        assertNull(broadcasts.registeredActions);
     }
 
     @Test

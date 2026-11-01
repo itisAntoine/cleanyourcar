@@ -39,14 +39,8 @@ public final class IntegrationController {
         this.shared = shared;
     }
 
-    /**
-     * XYAuto only for an accepted XYAuto profile, or for an existing user with no accepted
-     * profile (the pre-profile app always used XYAuto). Everything else is generic.
-     */
+    /** XYAuto is selected only by an accepted XYAuto profile; legacy arguments are ignored. */
     public static String selectAdapterId(String acceptedAdapterId, boolean legacyUser) {
-        if (acceptedAdapterId == null) {
-            return legacyUser ? XyAutoAdapter.ADAPTER_ID : GenericAndroidAdapter.ADAPTER_ID;
-        }
         return XyAutoAdapter.ADAPTER_ID.equals(acceptedAdapterId)
                 ? XyAutoAdapter.ADAPTER_ID : GenericAndroidAdapter.ADAPTER_ID;
     }

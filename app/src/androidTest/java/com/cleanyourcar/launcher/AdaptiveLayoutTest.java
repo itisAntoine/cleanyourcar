@@ -24,6 +24,7 @@ import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inspector.WindowInspector;
 import android.widget.Button;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -171,11 +172,58 @@ public class AdaptiveLayoutTest {
             if (spec.dockHeightDp > fixture.heightDp() - 2 * spec.marginDp) {
                 assertTrue(label + " dock does not fit but does not scroll", spec.dockScrolls);
             }
+
             if (spec.dashboardHeightDp > fixture.heightDp()) {
                 assertTrue(label + " dashboard does not fit but does not scroll",
                         spec.dashboardScrolls);
             }
         }
+    }
+
+    @Test
+    public void renderedTransportTargetsStayAtLeast48DpAtNarrowWindowWidth() {
+        QualificationSupport.onMain(new Callable<Void>() {
+            @Override
+            public Void call() {
+                LayoutPolicy.LayoutSpec narrow = LayoutPolicy.calculate(240, 600, 1f, 4);
+                int narrowViewportDp = narrow.contentWidthDp - 2 * LayoutPolicy.CARD_PADDING_DP;
+                HorizontalScrollView narrowRow = measuredTransportRow(narrow, narrowViewportDp);
+                LinearLayout narrowControls = (LinearLayout) narrowRow.getChildAt(0);
+                int minimumPx = AdaptiveUi.dp(activity, LayoutPolicy.MIN_TOUCH_TARGET_DP);
+                assertTrue("the 240dp window scrolls the controls instead of shrinking them",
+                        narrowControls.getMeasuredWidth() > narrowRow.getMeasuredWidth());
+                for (int i = 0; i < narrowControls.getChildCount(); i++) {
+                    View target = narrowControls.getChildAt(i);
+                    assertTrue("rendered target " + i + " width=" + target.getWidth(),
+                            target.getRight() - target.getLeft() >= minimumPx);
+                    assertTrue("rendered target " + i + " height=" + target.getHeight(),
+                            target.getBottom() - target.getTop() >= minimumPx);
+                }
+
+                LayoutPolicy.LayoutSpec reference = LayoutPolicy.calculate(1024, 600, 1f, 4);
+                int referenceViewportDp = (reference.contentWidthDp - reference.marginDp) / 2
+                        - 2 * LayoutPolicy.CARD_PADDING_DP;
+                HorizontalScrollView referenceRow =
+                        measuredTransportRow(reference, referenceViewportDp);
+                assertFalse("1024x600 retains its existing non-scrolling controls",
+                        reference.transportScrolls);
+                assertTrue(referenceRow.getChildAt(0).getMeasuredWidth()
+                        <= referenceRow.getMeasuredWidth());
+                return null;
+            }
+        });
+    }
+
+    private HorizontalScrollView measuredTransportRow(LayoutPolicy.LayoutSpec spec,
+            int viewportWidthDp) {
+        HorizontalScrollView row = MediaTransportRow.create(activity, spec,
+                new View(activity), new View(activity), new View(activity));
+        int width = AdaptiveUi.dp(activity, viewportWidthDp);
+        int height = AdaptiveUi.dp(activity, spec.transportHeightDp);
+        row.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
+        row.layout(0, 0, width, height);
+        return row;
     }
 
     @Test

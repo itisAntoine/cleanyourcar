@@ -3,6 +3,7 @@ package com.cleanyourcar.launcher.config;
 import android.content.Context;
 import android.content.pm.PackageInfo;
 
+import com.cleanyourcar.launcher.I18n;
 import com.cleanyourcar.launcher.ThemeConfig;
 import com.cleanyourcar.launcher.compat.CapabilityRegistry;
 import com.cleanyourcar.launcher.compat.DeviceProfile;
@@ -29,6 +30,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -153,6 +155,26 @@ public final class ConfigurationStore {
         MigrationResult(LauncherConfiguration configuration, boolean migrated) {
             this.configuration = configuration;
             this.migrated = migrated;
+        }
+    }
+
+    /** A validated, non-device-specific settings transfer shown for confirmation before apply. */
+    public static final class SanitizedImport {
+        public final NavigationReference.Mode referenceMode;
+        public final Map<Role, RoleSelection> roleOverrides;
+        public final boolean curatedAppVisibility;
+        public final LauncherConfiguration.UiPreferences ui;
+        private final LauncherConfiguration baseConfiguration;
+
+        SanitizedImport(NavigationReference.Mode referenceMode,
+                Map<Role, RoleSelection> roleOverrides, boolean curatedAppVisibility,
+                LauncherConfiguration.UiPreferences ui,
+                LauncherConfiguration baseConfiguration) {
+            this.referenceMode = referenceMode;
+            this.roleOverrides = Collections.unmodifiableMap(new EnumMap<>(roleOverrides));
+            this.curatedAppVisibility = curatedAppVisibility;
+            this.ui = ui;
+            this.baseConfiguration = baseConfiguration;
         }
     }
 
@@ -293,6 +315,80 @@ public final class ConfigurationStore {
         return previewProfile(ProfileCodec.parse(json, appVersionCode));
     }
 
+    /** Identifies exported settings documents while leaving profile imports backward compatible. */
+    public static boolean isSanitizedExport(byte[] bytes) {
+        if (bytes == null || bytes.length == 0 || bytes.length > ProfileCodec.MAX_PROFILE_BYTES) {
+            return false;
+        }
+        try {
+            JSONObject root = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+            return root.optInt("formatVersion", -1) == FORMAT_VERSION
+                    && root.optJSONObject("ui") != null;
+        } catch (JSONException e) {
+            return false;
+        }
+    }
+
+    /** Parses a settings export; older exports without a mode safely default to CITY. */
+    public synchronized SanitizedImport importSanitized(byte[] bytes)
+            throws ProfileFormatException {
+        if (bytes == null || bytes.length == 0) {
+            throw malformedConfiguration("configuration is empty");
+        }
+        if (bytes.length > ProfileCodec.MAX_PROFILE_BYTES) {
+            throw tooLarge();
+        }
+        final String jsonText;
+        try {
+            jsonText = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes)).toString();
+        } catch (CharacterCodingException e) {
+            throw malformedConfiguration("configuration is not UTF-8");
+        }
+        try {
+            JSONObject root = new JSONObject(jsonText);
+            if (root.getInt("formatVersion") != FORMAT_VERSION) {
+                throw malformedConfiguration("unsupported configuration version");
+            }
+            String visibility = root.getString("appVisibility");
+            if (!VISIBILITY_CURATED.equals(visibility)
+                    && !VISIBILITY_DISCOVERED.equals(visibility)) {
+                throw malformedConfiguration("invalid app visibility");
+            }
+            NavigationReference.Mode mode = NavigationReference.Mode.CITY;
+            if (root.has("referenceMode")) {
+                mode = NavigationReference.Mode.fromKey(root.getString("referenceMode"));
+                if (!mode.key().equals(root.getString("referenceMode"))) {
+                    throw malformedConfiguration("invalid reference mode");
+                }
+            }
+            Map<Role, RoleSelection> roles = importedRoles(root.getJSONObject("roleOverrides"));
+            LauncherConfiguration.UiPreferences ui =
+                    importedUi(root.getJSONObject("ui"));
+            return new SanitizedImport(mode, roles,
+                    VISIBILITY_CURATED.equals(visibility), ui, requireCurrent());
+        } catch (JSONException | IllegalArgumentException e) {
+            throw malformedConfiguration("configuration fields are invalid");
+        }
+    }
+
+    /** Applies only user settings; imported profile IDs and local validation are never accepted. */
+    public synchronized void applySanitizedImport(SanitizedImport imported)
+            throws IOException, ProfileFormatException {
+        LauncherConfiguration old = requireCurrent();
+        if (!Arrays.equals(serialize(imported.baseConfiguration), serialize(old))) {
+            throw new ProfileFormatException(ProfileFormatException.Reason.INVALID_VALUE,
+                    "configuration preview is stale");
+        }
+        LauncherConfiguration.Builder builder = old.toBuilder();
+        builder.roleOverrides.clear();
+        builder.roleOverrides.putAll(imported.roleOverrides);
+        builder.curatedAppVisibility = imported.curatedAppVisibility;
+        persist(change(old, builder).newConfiguration.toBuilder());
+    }
+
     /**
      * Accepts a previewed profile. On a write failure the previous file and in-memory
      * configuration remain. A preview made before another change is rejected as stale.
@@ -337,6 +433,11 @@ public final class ConfigurationStore {
      * identities, profile evidence, the saved location reference, and any unknown legacy data.
      */
     public void exportSanitized(OutputStream out) throws IOException {
+        exportSanitized(out, NavigationReference.Mode.CITY);
+    }
+
+    public void exportSanitized(OutputStream out, NavigationReference.Mode referenceMode)
+            throws IOException {
         LauncherConfiguration config = current();
         try {
             JSONObject root = new JSONObject();
@@ -350,6 +451,8 @@ public final class ConfigurationStore {
             }
             root.put("roleOverrides", rolesJson(config.roleOverrides, false));
             root.put("appVisibility", visibility(config));
+            root.put("referenceMode", referenceMode == null
+                    ? NavigationReference.Mode.CITY.key() : referenceMode.key());
             LauncherConfiguration.UiPreferences ui = config.ui;
             JSONObject uiJson = new JSONObject();
             uiJson.put("themeId", ui.themeId);
@@ -367,6 +470,81 @@ public final class ConfigurationStore {
         } catch (JSONException e) {
             throw new IOException("could not encode configuration", e);
         }
+    }
+
+    private static Map<Role, RoleSelection> importedRoles(JSONObject json)
+            throws JSONException, ProfileFormatException {
+        Map<Role, RoleSelection> roles = new EnumMap<>(Role.class);
+        Iterator<String> keys = json.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            Role role = Role.fromKey(key);
+            if (role == null) {
+                throw new ProfileFormatException(ProfileFormatException.Reason.UNKNOWN_FIELD,
+                        "roleOverrides contains an unsupported role");
+            }
+            JSONObject entry = json.getJSONObject(key);
+            String packageName = entry.getString("packageName");
+            String strategy = entry.getString("strategyId");
+            String component = entry.has("componentName")
+                    ? entry.getString("componentName") : null;
+            if (!DeviceProfile.STRATEGY_IDS.contains(strategy)
+                    || DeviceProfile.NAVIGATION_STRATEGY_IDS.contains(strategy)
+                            && role != Role.NAVIGATION
+                    || DeviceProfile.XYAUTO_STRATEGY_IDS.contains(strategy)
+                            && role != Role.EQUALIZER) {
+                throw new ProfileFormatException(ProfileFormatException.Reason.INVALID_VALUE,
+                        "roleOverrides contains an invalid strategy");
+            }
+            if (component != null && !component.startsWith(packageName + "/")) {
+                throw new ProfileFormatException(ProfileFormatException.Reason.INVALID_VALUE,
+                        "roleOverrides contains a mismatched component");
+            }
+            roles.put(role, new RoleSelection(packageName, component, strategy, null));
+        }
+        return roles;
+    }
+
+    private static LauncherConfiguration.UiPreferences importedUi(JSONObject json)
+            throws JSONException, ProfileFormatException {
+        int themeId = json.getInt("themeId");
+        int opacity = json.getInt("glassOpacity");
+        int language = json.getInt("languageId");
+        int columns = json.getInt("gridColumns");
+        if (themeId < ThemeConfig.THEME_GLASSMORPHISM
+                || themeId > ThemeConfig.THEME_WARM_CARBON
+                || opacity < ThemeConfig.OPACITY_CRYSTAL || opacity > ThemeConfig.OPACITY_SOLID
+                || language < 0 || language >= I18n.LANGUAGE_NAMES.length
+                || columns < 3 || columns > 5) {
+            throw new ProfileFormatException(ProfileFormatException.Reason.INVALID_VALUE,
+                    "ui settings contain an invalid value");
+        }
+        List<String> order = importedStrings(json.getJSONArray("appOrder"));
+        Set<String> hidden = new LinkedHashSet<>(importedStrings(
+                json.getJSONArray("hiddenPackages")));
+        Set<String> unhidden = new LinkedHashSet<>(importedStrings(
+                json.getJSONArray("unhiddenPackages")));
+        return new LauncherConfiguration.UiPreferences(themeId, opacity, language,
+                json.getBoolean("dockLeft"), json.getBoolean("swapDashboardColumns"),
+                columns, order, hidden, unhidden);
+    }
+
+    private static List<String> importedStrings(JSONArray array) throws JSONException,
+            ProfileFormatException {
+        List<String> values = new ArrayList<>();
+        for (int i = 0; i < array.length(); i++) {
+            Object value = array.get(i);
+            if (!(value instanceof String)) {
+                throw new ProfileFormatException(ProfileFormatException.Reason.BAD_TYPE,
+                        "configuration arrays must contain strings");
+            }
+            values.add((String) value);
+        }
+        return values;
+    }
+
+    private static ProfileFormatException malformedConfiguration(String message) {
+        return new ProfileFormatException(ProfileFormatException.Reason.MALFORMED, message);
     }
 
     private LauncherConfiguration requireCurrent() {
@@ -427,7 +605,7 @@ public final class ConfigurationStore {
         builder.migrationVersion = LauncherConfiguration.MIGRATION_VERSION;
         boolean existingInstall = upgradedInstall || !legacy.isEmpty();
         builder.curatedAppVisibility = existingInstall;
-        builder.legacyXyAutoUser = existingInstall;
+        builder.legacyXyAutoUser = false;
         for (Map.Entry<String, Role> entry : LEGACY_ROLE_KEYS.entrySet()) {
             Object value = legacy.get(entry.getKey());
             if (value instanceof String && !((String) value).trim().isEmpty()) {
@@ -577,8 +755,9 @@ public final class ConfigurationStore {
                 !VISIBILITY_DISCOVERED.equals(root.optString("appVisibility"));
         // Files written before this flag existed: appVisibility was then fixed at migration
         // from the same existing-install signal, so it is a faithful one-time fallback.
-        builder.legacyXyAutoUser = root.has(LEGACY_XYAUTO_USER)
-                ? root.getBoolean(LEGACY_XYAUTO_USER) : builder.curatedAppVisibility;
+        // Older versions used this flag to infer a vendor adapter from upgrade status or any
+        // legacy preference. Keep reading the file shape, but never trust that inference.
+        builder.legacyXyAutoUser = false;
         JSONObject profile = root.optJSONObject("profile");
         if (profile != null) {
             builder.acceptedProfileId = profile.getString("id");

@@ -242,14 +242,27 @@ public class ConfigurationStoreTest {
     }
 
     @Test
-    public void legacyXyAutoUser_isIndependentOfAppVisibility() throws Exception {
+    public void migrationPreservesPreferencesWithoutInferringXyAuto() throws Exception {
         FakeStorage legacyStorage = new FakeStorage();
-        migratedStore(legacyStorage, "legacy-prefs-ui-only.json");
-        LauncherConfiguration legacy = reopenWithAppVisibility(legacyStorage, "discovered");
+        Map<String, Object> legacyPrefs = legacyPrefs("legacy-prefs-existing-user.json");
+        LauncherConfiguration migrated = new ConfigurationStore(legacyStorage, APP_VERSION)
+                .migrateLegacy(legacyPrefs).configuration;
+        JSONObject stored = new JSONObject(new String(legacyStorage.read(), StandardCharsets.UTF_8));
+        stored.put("appVisibility", "discovered");
+        legacyStorage.bytes = stored.toString().getBytes(StandardCharsets.UTF_8);
+        LauncherConfiguration legacy = new ConfigurationStore(legacyStorage, APP_VERSION)
+                .migrateLegacy(legacyPrefs).configuration;
         assertFalse(legacy.curatedAppVisibility);
-        assertTrue(legacy.legacyXyAutoUser);
-        assertEquals("xyauto-yt3518c", com.cleanyourcar.launcher.integration.IntegrationController
+        assertFalse(legacy.legacyXyAutoUser);
+        assertEquals(migrated.ui.themeId, legacy.ui.themeId);
+        assertEquals(migrated.ui.languageId, legacy.ui.languageId);
+        assertEquals("com.waze", legacy.roleOverrides.get(Role.NAVIGATION).packageName);
+        assertEquals("generic", com.cleanyourcar.launcher.integration.IntegrationController
                 .selectAdapterId(legacy.acceptedAdapterId, legacy.legacyXyAutoUser));
+        assertEquals("generic", com.cleanyourcar.launcher.integration.IntegrationController
+                .selectAdapterId(null, true));
+        assertTrue(com.cleanyourcar.launcher.SetupFlow.shouldAutoOpen(false,
+                legacy.legacyXyAutoUser, false));
 
         FakeStorage freshStorage = new FakeStorage();
         new ConfigurationStore(freshStorage, APP_VERSION)
@@ -259,6 +272,17 @@ public class ConfigurationStoreTest {
         assertFalse(fresh.legacyXyAutoUser);
         assertEquals("generic", com.cleanyourcar.launcher.integration.IntegrationController
                 .selectAdapterId(fresh.acceptedAdapterId, fresh.legacyXyAutoUser));
+
+        LauncherConfiguration emptyUpgrade = new ConfigurationStore(
+                new FakeStorage(), APP_VERSION)
+                .migrateLegacy(new HashMap<String, Object>(), true).configuration;
+        assertFalse(emptyUpgrade.legacyXyAutoUser);
+        assertNull(emptyUpgrade.acceptedAdapterId);
+        assertEquals("generic",
+                com.cleanyourcar.launcher.integration.IntegrationController.selectAdapterId(
+                        emptyUpgrade.acceptedAdapterId, emptyUpgrade.legacyXyAutoUser));
+        assertTrue(com.cleanyourcar.launcher.SetupFlow.shouldAutoOpen(false,
+                emptyUpgrade.legacyXyAutoUser, false));
     }
 
     private static LauncherConfiguration reopenWithAppVisibility(FakeStorage storage,
@@ -408,8 +432,9 @@ public class ConfigurationStoreTest {
         assertFalse(exported.contains("YT3518C_00008_V008"));
         assertFalse(exported.contains("s3cr3t-token-value"));
         assertFalse(exported.contains("token"));
-        assertFalse(exported.toLowerCase(java.util.Locale.ROOT)
-                .replace("opacity", "").contains("city"));
+        assertFalse(json.has("cityIndex"));
+        assertFalse(json.has("location"));
+        assertFalse(json.has("consent"));
         assertFalse(exported.contains("plus_code"));
         assertFalse(exported.contains("navigationCity"));
         assertFalse(exported.contains("versionCode"));
@@ -422,6 +447,35 @@ public class ConfigurationStoreTest {
         JSONObject ui = json.getJSONObject("ui");
         assertEquals(3, ui.getInt("glassOpacity"));
         assertEquals("com.waze", ui.getJSONArray("appOrder").getString(0));
+    }
+
+    @Test
+    public void sanitizedTransferCarriesOnlyReferenceModeAndReadsOlderExportsAsCity()
+            throws Exception {
+        ConfigurationStore store = migratedStore(new FakeStorage(),
+                "legacy-prefs-existing-user.json");
+        for (NavigationReference.Mode mode : NavigationReference.Mode.values()) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            store.exportSanitized(out, mode);
+            byte[] exportedBytes = out.toByteArray();
+            String exported = new String(exportedBytes, StandardCharsets.UTF_8);
+            JSONObject json = new JSONObject(exported);
+            assertEquals(mode.key(), json.getString("referenceMode"));
+            assertFalse(exported.contains("consent"));
+            assertFalse(exported.contains("latitude"));
+            assertFalse(exported.contains("longitude"));
+            assertFalse(exported.contains("coordinates"));
+            assertEquals(mode, store.importSanitized(exportedBytes).referenceMode);
+        }
+
+        ByteArrayOutputStream olderExport = new ByteArrayOutputStream();
+        store.exportSanitized(olderExport);
+        JSONObject oldFormat = new JSONObject(
+                new String(olderExport.toByteArray(), StandardCharsets.UTF_8));
+        oldFormat.remove("referenceMode");
+        assertEquals(NavigationReference.Mode.CITY,
+                store.importSanitized(oldFormat.toString().getBytes(StandardCharsets.UTF_8))
+                        .referenceMode);
     }
 
     @Test

@@ -548,10 +548,6 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
         card.addView(midRow, midLp);
 
         // Liquid Transport Controls: [Prev] [Play/Pause] [Next]
-        LinearLayout transport = new LinearLayout(this);
-        transport.setOrientation(LinearLayout.HORIZONTAL);
-        transport.setGravity(Gravity.CENTER);
-
         View prevBtn = createLiquidTransportButton(p, VectorIcons.ICON_PREV, false, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -572,16 +568,7 @@ public class MainActivity extends Activity implements HeadUnitAdapter.Listener {
             }
         });
 
-        LinearLayout.LayoutParams t1 = new LinearLayout.LayoutParams(0, dp(spec.transportHeightDp), 1f);
-        t1.rightMargin = dp(12);
-        LinearLayout.LayoutParams t2 = new LinearLayout.LayoutParams(0, dp(spec.transportHeightDp), 1f);
-        t2.rightMargin = dp(12);
-        LinearLayout.LayoutParams t3 = new LinearLayout.LayoutParams(0, dp(spec.transportHeightDp), 1f);
-
-        transport.addView(prevBtn, t1);
-        transport.addView(playWrap, t2);
-        transport.addView(nextBtn, t3);
-        card.addView(transport);
+        card.addView(MediaTransportRow.create(this, spec, prevBtn, playWrap, nextBtn));
 
         return card;
     }

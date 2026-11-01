@@ -72,11 +72,17 @@ public class SetupActivity extends Activity {
         setupPrefs(context).edit().putString(KEY_REFERENCE_MODE, mode.key()).apply();
     }
 
+    void applyImportedReferenceMode(NavigationReference.Mode mode) {
+        setReferenceMode(this, mode);
+        flow.onImportedReferenceMode(mode);
+        saveConsents();
+    }
+
     static boolean isConsented(Context context, SetupFlow.Feature feature) {
         return setupPrefs(context).getBoolean(consentKey(feature), false);
     }
 
-    private static String consentKey(SetupFlow.Feature feature) {
+    static String consentKey(SetupFlow.Feature feature) {
         return KEY_CONSENT_PREFIX + feature.name().toLowerCase(java.util.Locale.US);
     }
 
@@ -345,7 +351,7 @@ public class SetupActivity extends Activity {
         } else if (requestCode == REQ_EXPORT) {
             try (OutputStream out = getContentResolver().openOutputStream(data.getData())) {
                 if (out == null) throw new IOException("no stream");
-                store.exportSanitized(out);
+                store.exportSanitized(out, referenceMode(this));
                 toast(I18n.tr(this, I18n.KEY_EXPORT_DONE));
             } catch (IOException | RuntimeException e) {
                 toast(I18n.tr(this, I18n.KEY_FILE_ERROR));

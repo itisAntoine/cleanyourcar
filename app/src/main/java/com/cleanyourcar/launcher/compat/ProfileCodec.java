@@ -204,8 +204,9 @@ public final class ProfileCodec {
     }
 
     private static Object readValue(String json) throws ProfileFormatException {
+        String strictInput = StrictJson.validate(json);
         try {
-            JSONTokener tokener = new JSONTokener(json);
+            JSONTokener tokener = new JSONTokener(strictInput);
             Object value = tokener.nextValue();
             if (tokener.nextClean() != 0) {
                 throw new ProfileFormatException(Reason.MALFORMED, "unexpected trailing content");
@@ -213,6 +214,223 @@ public final class ProfileCodec {
             return value;
         } catch (JSONException e) {
             throw new ProfileFormatException(Reason.MALFORMED, "profile is not valid JSON");
+        }
+    }
+
+    /** Strict syntax/duplicate-key pass before the platform JSON object model is used. */
+    private static final class StrictJson {
+        private final String text;
+        private final List<Integer> negativeZeroOffsets = new ArrayList<>();
+        private int index;
+
+        private StrictJson(String text) {
+            this.text = text;
+        }
+
+        static String validate(String text) throws ProfileFormatException {
+            StrictJson parser = new StrictJson(text);
+            parser.skipWhitespace();
+            parser.value(0);
+            parser.skipWhitespace();
+            if (parser.index != text.length()) {
+                throw malformed();
+            }
+            if (parser.negativeZeroOffsets.isEmpty()) return text;
+            StringBuilder normalized = new StringBuilder(text);
+            for (int i = parser.negativeZeroOffsets.size() - 1; i >= 0; i--) {
+                normalized.insert(parser.negativeZeroOffsets.get(i) + 2, ".0");
+            }
+            return normalized.toString();
+        }
+
+        private void value(int depth) throws ProfileFormatException {
+            if (depth > 100 || index >= text.length()) {
+                throw malformed();
+            }
+            char current = text.charAt(index);
+            if (current == '{') {
+                object(depth + 1);
+            } else if (current == '[') {
+                array(depth + 1);
+            } else if (current == '"') {
+                string();
+            } else if (current == 't') {
+                literal("true");
+            } else if (current == 'f') {
+                literal("false");
+            } else if (current == 'n') {
+                literal("null");
+            } else if (current == '-' || isDigit(current)) {
+                number();
+            } else {
+                throw malformed();
+            }
+        }
+
+        private void object(int depth) throws ProfileFormatException {
+            index++;
+            skipWhitespace();
+            if (take('}')) return;
+            Set<String> keys = new HashSet<>();
+            while (true) {
+                if (index >= text.length() || text.charAt(index) != '"') {
+                    throw malformed();
+                }
+                String key = string();
+                if (!keys.add(key)) {
+                    throw malformed();
+                }
+                skipWhitespace();
+                require(':');
+                skipWhitespace();
+                value(depth);
+                skipWhitespace();
+                if (take('}')) return;
+                require(',');
+                skipWhitespace();
+            }
+        }
+
+        private void array(int depth) throws ProfileFormatException {
+            index++;
+            skipWhitespace();
+            if (take(']')) return;
+            while (true) {
+                value(depth);
+                skipWhitespace();
+                if (take(']')) return;
+                require(',');
+                skipWhitespace();
+            }
+        }
+
+        private String string() throws ProfileFormatException {
+            require('"');
+            StringBuilder result = new StringBuilder();
+            while (index < text.length()) {
+                char current = text.charAt(index++);
+                if (current == '"') return result.toString();
+                if (current < 0x20) throw malformed();
+                if (current != '\\') {
+                    result.append(current);
+                    continue;
+                }
+                if (index >= text.length()) throw malformed();
+                char escape = text.charAt(index++);
+                switch (escape) {
+                    case '"':
+                    case '\\':
+                    case '/':
+                        result.append(escape);
+                        break;
+                    case 'b':
+                        result.append('\b');
+                        break;
+                    case 'f':
+                        result.append('\f');
+                        break;
+                    case 'n':
+                        result.append('\n');
+                        break;
+                    case 'r':
+                        result.append('\r');
+                        break;
+                    case 't':
+                        result.append('\t');
+                        break;
+                    case 'u':
+                        result.append(unicodeEscape());
+                        break;
+                    default:
+                        throw malformed();
+                }
+            }
+            throw malformed();
+        }
+
+        private char unicodeEscape() throws ProfileFormatException {
+            if (index + 4 > text.length()) throw malformed();
+            int value = 0;
+            for (int i = 0; i < 4; i++) {
+                char character = text.charAt(index++);
+                int digit = character >= '0' && character <= '9' ? character - '0'
+                        : character >= 'a' && character <= 'f' ? character - 'a' + 10
+                        : character >= 'A' && character <= 'F' ? character - 'A' + 10 : -1;
+                if (digit < 0) throw malformed();
+                value = (value << 4) | digit;
+            }
+            return (char) value;
+        }
+
+        private void number() throws ProfileFormatException {
+            int start = index;
+            if (take('-') && index >= text.length()) throw malformed();
+            if (take('0')) {
+                if (index < text.length() && isDigit(text.charAt(index))) {
+                    throw malformed();
+                }
+            } else {
+                if (index >= text.length() || text.charAt(index) < '1'
+                        || text.charAt(index) > '9') {
+                    throw malformed();
+                }
+                digits();
+            }
+            if (take('.')) {
+                if (index >= text.length() || !isDigit(text.charAt(index))) throw malformed();
+                digits();
+            }
+            if (take('e') || take('E')) {
+                if (!take('+')) take('-');
+                if (index >= text.length() || !isDigit(text.charAt(index))) throw malformed();
+                digits();
+            }
+            if (index - start == 2 && text.charAt(start) == '-'
+                    && text.charAt(start + 1) == '0') {
+                negativeZeroOffsets.add(start);
+            }
+        }
+
+        private void digits() {
+            while (index < text.length() && isDigit(text.charAt(index))) index++;
+        }
+
+        private void literal(String expected) throws ProfileFormatException {
+            if (!text.regionMatches(index, expected, 0, expected.length())) {
+                throw malformed();
+            }
+            index += expected.length();
+        }
+
+        private void skipWhitespace() {
+            while (index < text.length()) {
+                char current = text.charAt(index);
+                if (current == ' ' || current == '\t' || current == '\n' || current == '\r') {
+                    index++;
+                } else {
+                    return;
+                }
+            }
+        }
+
+        private boolean take(char expected) {
+            if (index < text.length() && text.charAt(index) == expected) {
+                index++;
+                return true;
+            }
+            return false;
+        }
+
+        private void require(char expected) throws ProfileFormatException {
+            if (!take(expected)) throw malformed();
+        }
+
+        private static boolean isDigit(char value) {
+            return value >= '0' && value <= '9';
+        }
+
+        private static ProfileFormatException malformed() {
+            return new ProfileFormatException(Reason.MALFORMED, "profile is not valid JSON");
         }
     }
 
@@ -326,7 +544,25 @@ public final class ProfileCodec {
     }
 
     private static int utf8Length(String text) {
-        return text.getBytes(StandardCharsets.UTF_8).length;
+        int length = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char value = text.charAt(i);
+            if (value <= 0x7f) {
+                length++;
+            } else if (value <= 0x7ff) {
+                length += 2;
+            } else if (Character.isHighSurrogate(value) && i + 1 < text.length()
+                    && Character.isLowSurrogate(text.charAt(i + 1))) {
+                length += 4;
+                i++;
+            } else if (Character.isSurrogate(value)) {
+                return Integer.MAX_VALUE;
+            } else {
+                length += 3;
+            }
+            if (length > MAX_PROFILE_BYTES) return length;
+        }
+        return length;
     }
 
     private static String truncate(String text) {

@@ -2,6 +2,7 @@ package com.cleanyourcar.launcher;
 
 import android.app.Dialog;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -18,6 +19,8 @@ import com.cleanyourcar.launcher.compat.ProfileCodec;
 import com.cleanyourcar.launcher.compat.ProfileFormatException;
 import com.cleanyourcar.launcher.compat.ProfileMatcher;
 import com.cleanyourcar.launcher.config.ConfigurationStore;
+import com.cleanyourcar.launcher.config.LauncherConfiguration;
+import com.cleanyourcar.launcher.config.NavigationReference;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -149,6 +152,11 @@ final class CompatibilityDialog {
             Runnable onApplied) {
         try {
             byte[] bytes = readBounded(in);
+            if (ConfigurationStore.isSanitizedExport(bytes)) {
+                showSanitizedImportPreview(context, store, store.importSanitized(bytes),
+                        onApplied);
+                return;
+            }
             ConfigurationStore.ConfigurationChange change = store.importProfile(bytes);
             DeviceProfile profile = ProfileCodec.parse(
                     new String(bytes, StandardCharsets.UTF_8), versionCode(context));
@@ -158,6 +166,94 @@ final class CompatibilityDialog {
         } catch (IOException e) {
             toast(context, I18n.tr(context, I18n.KEY_FILE_ERROR));
         }
+    }
+
+    private static void showSanitizedImportPreview(final Context context,
+            final ConfigurationStore store, final ConfigurationStore.SanitizedImport imported,
+            final Runnable onApplied) {
+        final ThemeConfig.Palette p = ThemeConfig.getActivePalette(context);
+        final Dialog dialog = SetupUi.newDialog(context);
+        LinearLayout root = SetupUi.card(context, p);
+        root.addView(SetupUi.title(context, p,
+                I18n.tr(context, I18n.KEY_CONFIGURATION_IMPORT_TITLE)));
+        root.addView(SetupUi.note(context, p,
+                I18n.tr(context, I18n.KEY_CONFIGURATION_IMPORT_NOTICE)));
+        root.addView(SetupUi.note(context, p,
+                I18n.tr(context, I18n.KEY_SETUP_REFERENCE) + ": "
+                        + referenceModeText(context, imported.referenceMode)
+                        + " • " + imported.roleOverrides.size() + " "
+                        + I18n.tr(context, I18n.KEY_SETUP_ROLES)));
+        SetupUi.addRow(root, SetupUi.button(context, p, I18n.tr(context, I18n.KEY_APPLY), true,
+                v -> {
+                    dialog.dismiss();
+                    applySanitizedImport(context, store, imported, onApplied);
+                }));
+        SetupUi.addRow(root, SetupUi.button(context, p, I18n.tr(context, I18n.KEY_CANCEL), false,
+                SetupUi.dismissOnClick(dialog)));
+        SetupUi.showDialog(dialog, root, false);
+    }
+
+    private static void applySanitizedImport(Context context, ConfigurationStore store,
+            ConfigurationStore.SanitizedImport imported, Runnable onApplied) {
+        try {
+            store.applySanitizedImport(imported);
+            applyUiPreferences(context, imported.ui);
+            if (context instanceof SetupActivity) {
+                ((SetupActivity) context).applyImportedReferenceMode(imported.referenceMode);
+            } else {
+                SetupActivity.setReferenceMode(context, imported.referenceMode);
+                if (imported.referenceMode == NavigationReference.Mode.CURRENT_LOCATION) {
+                    SetupActivity.setupPrefs(context).edit()
+                            .putBoolean(SetupActivity.consentKey(
+                                    SetupFlow.Feature.CURRENT_LOCATION), false).apply();
+                }
+            }
+
+            toast(context, I18n.tr(context, I18n.KEY_CONFIGURATION_IMPORTED));
+            if (onApplied != null) onApplied.run();
+        } catch (ConfigurationStore.NewerFormatException e) {
+            toast(context, I18n.tr(context, I18n.KEY_READ_ONLY));
+        } catch (ProfileFormatException e) {
+            toast(context, profileErrorText(context, e));
+        } catch (IOException e) {
+            toast(context, I18n.tr(context, I18n.KEY_SAVE_FAILED));
+        }
+    }
+
+    private static String referenceModeText(Context context, NavigationReference.Mode mode) {
+        switch (mode) {
+            case CURRENT_LOCATION:
+                return I18n.tr(context, I18n.KEY_USE_CURRENT_LOCATION);
+            case NONE:
+                return I18n.tr(context, I18n.KEY_NO_REFERENCE);
+            case CITY:
+            default:
+                return I18n.tr(context, I18n.KEY_CHOOSE_CITY);
+        }
+    }
+
+    private static void applyUiPreferences(Context context,
+            LauncherConfiguration.UiPreferences ui) {
+        SharedPreferences.Editor editor = ThemeConfig.prefs(context).edit()
+                .putInt(ThemeConfig.KEY_THEME_ID, ui.themeId)
+                .putInt(ThemeConfig.KEY_GLASS_OPACITY, ui.glassOpacity)
+                .putInt(ThemeConfig.KEY_LANGUAGE_ID, ui.languageId)
+                .putBoolean(ThemeConfig.KEY_DOCK_LEFT, ui.dockLeft)
+                .putBoolean(ThemeConfig.KEY_SWAP_COLUMNS, ui.swapDashboardColumns)
+                .putInt(ThemeConfig.KEY_GRID_COLUMNS, ui.gridColumns)
+                .putString(ThemeConfig.KEY_APP_SAVED_ORDER, joinCsv(ui.appOrder))
+                .putStringSet(ThemeConfig.KEY_APP_HIDDEN_PACKAGES, ui.hiddenPackages)
+                .putStringSet(ThemeConfig.KEY_APP_UNHIDDEN_PACKAGES, ui.unhiddenPackages);
+        editor.apply();
+    }
+
+    private static String joinCsv(List<String> values) {
+        StringBuilder csv = new StringBuilder();
+        for (String value : values) {
+            if (csv.length() > 0) csv.append(',');
+            csv.append(value);
+        }
+        return csv.toString();
     }
 
     private static void apply(Context context, ConfigurationStore store,

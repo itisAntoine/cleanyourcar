@@ -1,5 +1,7 @@
 package com.cleanyourcar.launcher;
 
+import com.cleanyourcar.launcher.config.NavigationReference;
+
 import java.util.EnumSet;
 import java.util.Set;
 
@@ -44,6 +46,13 @@ public final class SetupFlow {
         return consented.contains(feature);
     }
 
+    /** Imported reference mode never transfers the user's local location consent. */
+    public void onImportedReferenceMode(NavigationReference.Mode mode) {
+        if (mode == NavigationReference.Mode.CURRENT_LOCATION) {
+            consented.remove(Feature.CURRENT_LOCATION);
+        }
+    }
+
     public Set<Feature> consentedFeatures() {
         return consented.isEmpty() ? EnumSet.noneOf(Feature.class) : EnumSet.copyOf(consented);
     }
@@ -62,12 +71,9 @@ public final class SetupFlow {
         return choice == ReferenceChoice.CURRENT_LOCATION;
     }
 
-    /**
-     * Opens setup automatically once for generic installs; existing XYAuto users and installs
-     * with an accepted profile keep their current start-up.
-     */
+    /** Opens setup until the user has seen it or explicitly accepted a matching profile. */
     public static boolean shouldAutoOpen(boolean setupSeen, boolean legacyXyAutoUser,
             boolean hasAcceptedProfile) {
-        return !setupSeen && !legacyXyAutoUser && !hasAcceptedProfile;
+        return !setupSeen && !hasAcceptedProfile;
     }
 }

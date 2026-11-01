@@ -25,10 +25,12 @@ public class BridgeAuthorizationTest {
 
     static final class FakeDispatcher implements BridgeRequestHandler.DestinationDispatcher {
         final List<String> acceptedDestinations = Collections.synchronizedList(new ArrayList<String>());
+        final List<String> acceptedCredentials = Collections.synchronizedList(new ArrayList<String>());
 
         @Override
-        public void dispatch(String destination) {
+        public void dispatch(String destination, String credential) {
             acceptedDestinations.add(destination);
+            acceptedCredentials.add(credential);
         }
     }
 
@@ -119,6 +121,7 @@ public class BridgeAuthorizationTest {
                 handler.handleHttp(httpGet("/nav?q=10.7769%2C106.7009", "Bearer " + credential.bearerValue())));
         assertEquals(1, fakeDispatcher.acceptedDestinations.size());
         assertEquals("10.7769,106.7009", fakeDispatcher.acceptedDestinations.get(0));
+        assertEquals(credential.bearerValue(), fakeDispatcher.acceptedCredentials.get(0));
         assertEquals(BridgeRequestHandler.Outcome.ACCEPTED,
                 handler.handleBleWrite(("CYC-NAV/1\n" + credential.bearerValue() + "\nQMVX+2P")
                         .getBytes(StandardCharsets.UTF_8)));

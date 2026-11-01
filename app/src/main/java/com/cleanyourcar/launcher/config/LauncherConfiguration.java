@@ -40,9 +40,8 @@ public final class LauncherConfiguration {
     /** True keeps the curated car-app list; false shows all discovered launchable apps. */
     public final boolean curatedAppVisibility;
     /**
-     * True when this install existed before profiles (migrated from legacy preferences or an
-     * upgraded install); such users keep the XYAuto integration until they accept a profile.
-     * Fixed at migration; device-local and never exported.
+     * Deprecated on-disk compatibility field. It is always false; migration status never selects
+     * a vendor adapter or suppresses setup.
      */
     public final boolean legacyXyAutoUser;
     public final UiPreferences ui;

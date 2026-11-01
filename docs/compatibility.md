@@ -178,15 +178,21 @@ only the bridge does, for local-network reception.
   - the accepted profile ID, revision and adapter;
   - role overrides;
   - app visibility;
-  - UI preferences.
+  - UI preferences;
+  - the navigation reference mode (`CITY`, `CURRENT_LOCATION` or `NONE`).
 
   The export leaves out validation keys, version identities, profile evidence, the saved
-  location reference and unknown legacy data.
+  city selection, coordinates, location consent and unknown legacy data. The mode is a
+  preference only; exporting `CURRENT_LOCATION` does not export a location or permission.
 - **Imported profiles:**
   - They are data only: at most 64 KiB, validated by the app's profile codec (rules mirror
     [`profiles/schema.json`](../profiles/schema.json)).
   - They are shown as a preview and applied only on confirmation.
   - A failed write keeps the previous configuration.
+- **Imported settings:** Older sanitized exports without a reference mode use `CITY`.
+  Importing `CURRENT_LOCATION` stores that preference but clears this device's local location
+  consent, so current-location navigation remains disabled until the user grants permission
+  and confirms it locally. City names and location data are never transferred.
 
 **The navigation bridge:**
 

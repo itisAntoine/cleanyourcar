@@ -89,6 +89,8 @@ public final class LayoutPolicy {
         public final int transportHeightDp;
         /** Width of each media transport button in the music card. */
         public final int transportButtonWidthDp;
+        /** True when the transport row needs horizontal reflow to preserve minimum targets. */
+        public final boolean transportScrolls;
         public final int actionRowMinHeightDp;
         public final int dashboardHeightDp;
         public final boolean dashboardScrolls;
@@ -108,7 +110,7 @@ public final class LayoutPolicy {
                 int dockSidePaddingDp, float dockClockSp,
                 int dockHeightDp, boolean dockScrolls, int availableContentWidthDp,
                 int contentWidthDp, int navButtonHeightDp, int transportHeightDp,
-                int transportButtonWidthDp,
+                int transportButtonWidthDp, boolean transportScrolls,
                 int actionRowMinHeightDp, int dashboardHeightDp, boolean dashboardScrolls,
                 int gridColumns, int gridRows, int appSlotsPerPage, int gridTileHeightDp,
                 int minimumTileHeightDp, boolean gridScrolls, int dialogMaxWidthDp,
@@ -131,6 +133,7 @@ public final class LayoutPolicy {
             this.navButtonHeightDp = navButtonHeightDp;
             this.transportHeightDp = transportHeightDp;
             this.transportButtonWidthDp = transportButtonWidthDp;
+            this.transportScrolls = transportScrolls;
             this.actionRowMinHeightDp = actionRowMinHeightDp;
             this.dashboardHeightDp = dashboardHeightDp;
             this.dashboardScrolls = dashboardScrolls;
@@ -181,6 +184,7 @@ public final class LayoutPolicy {
                     && navButtonHeightDp == s.navButtonHeightDp
                     && transportHeightDp == s.transportHeightDp
                     && transportButtonWidthDp == s.transportButtonWidthDp
+                    && transportScrolls == s.transportScrolls
                     && actionRowMinHeightDp == s.actionRowMinHeightDp
                     && dashboardHeightDp == s.dashboardHeightDp
                     && dashboardScrolls == s.dashboardScrolls
@@ -202,6 +206,7 @@ public final class LayoutPolicy {
             h = 31 * h + dockSidePaddingDp;
             h = 31 * h + Float.floatToIntBits(dockClockSp);
             h = 31 * h + transportButtonWidthDp;
+            h = 31 * h + (transportScrolls ? 1 : 0);
             h = 31 * h + dockHeightDp;
             h = 31 * h + contentWidthDp;
             h = 31 * h + dashboardHeightDp;
@@ -292,8 +297,10 @@ public final class LayoutPolicy {
         }
         boolean dashScrolls = dashHeight > h;
         int musicCard = mode == Mode.SPLIT ? columnWidth : contentWidth;
-        int transportWidth = (musicCard - 2 * CARD_PADDING_DP
+        int naturalTransportWidth = (musicCard - 2 * CARD_PADDING_DP
                 - (TRANSPORT_BUTTONS - 1) * TRANSPORT_GAP_DP) / TRANSPORT_BUTTONS;
+        boolean transportScrolls = naturalTransportWidth < MIN_TOUCH_TARGET_DP;
+        int transportWidth = Math.max(MIN_TOUCH_TARGET_DP, naturalTransportWidth);
 
         // App grid: columns bounded by fit, rows by height; library + settings tiles always shown.
         // The grid view spans content plus both margins minus its padding; tiles carry margins.
@@ -316,7 +323,8 @@ public final class LayoutPolicy {
 
         return new LayoutSpec(mode, dock, margin, dockWidth, dockButton, dockButtonMargin,
                 dockToggle, dockPadding, dockSidePadding, clockSp, dockHeight, dockScrolls,
-                availableContent, contentWidth, navButton, transport, transportWidth, actionRow,
+                availableContent, contentWidth, navButton, transport, transportWidth,
+                transportScrolls, actionRow,
                 dashHeight, dashScrolls, cols, rows, slots,
                 tileHeight, minTile, gridScrolls, dialogMaxWidth, dialogMaxHeight);
     }

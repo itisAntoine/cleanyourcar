@@ -64,6 +64,7 @@ public class LayoutPolicyTest {
         list.add(new Fixture("720x1280 portrait xhdpi bars", 720, 1280, XHDPI, 0, 72));
         list.add(new Fixture("split-screen 320dp portrait", 640, 1200, XHDPI, 0, 0));
         list.add(new Fixture("split-screen 320dp landscape", 320, 400, MDPI, 0, 0));
+        list.add(new Fixture("narrow 240dp landscape", 240, 600, MDPI, 0, 0));
         return list;
     }
 
@@ -99,10 +100,13 @@ public class LayoutPolicyTest {
                 spec.dockToggleDp + 2 * spec.dockSidePaddingDp <= spec.dockWidthDp);
 
         // Transport row: three buttons with two gaps inside the padded music card.
-        int transportWidth = (musicCardWidthDp(spec) - 2 * CARD_PADDING_DP
+        int naturalTransportWidth = (musicCardWidthDp(spec) - 2 * CARD_PADDING_DP
                 - 2 * TRANSPORT_GAP_DP) / 3;
+        int transportWidth = Math.max(LayoutPolicy.MIN_TOUCH_TARGET_DP, naturalTransportWidth);
         assertTrue(label + " transport width " + transportWidth, transportWidth >= 48);
         assertEquals(label, transportWidth, spec.transportButtonWidthDp);
+        assertEquals(label + " transport reflow", naturalTransportWidth < 48,
+                spec.transportScrolls);
         assertTrue(label + " transport height", spec.transportHeightDp >= 48);
 
         // Navigation row: two buttons in the padded card of the other column.
@@ -207,6 +211,19 @@ public class LayoutPolicyTest {
         assertEquals(84, reference.dockWidthDp);
         assertEquals(92, reference.navButtonHeightDp);
         assertEquals(240, reference.gridTileHeightDp);
+    }
+
+    @Test
+    public void narrowWindowReflowsTransportTargetsWithoutChangingReferenceLayout() {
+        LayoutPolicy.LayoutSpec narrow = LayoutPolicy.calculate(240, 600, 1f, 4);
+        assertTrue(narrow.transportButtonWidthDp >= LayoutPolicy.MIN_TOUCH_TARGET_DP);
+        assertTrue(narrow.transportScrolls);
+
+        LayoutPolicy.LayoutSpec reference = LayoutPolicy.calculate(1024, 600, 1f, 4);
+        int referenceWidth = (musicCardWidthDp(reference) - 2 * CARD_PADDING_DP
+                - 2 * TRANSPORT_GAP_DP) / 3;
+        assertEquals(referenceWidth, reference.transportButtonWidthDp);
+        assertFalse(reference.transportScrolls);
     }
 
     @Test

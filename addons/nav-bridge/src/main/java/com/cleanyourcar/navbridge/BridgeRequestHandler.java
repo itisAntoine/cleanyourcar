@@ -17,7 +17,7 @@ import java.util.Locale;
 public final class BridgeRequestHandler {
 
     public interface DestinationDispatcher {
-        void dispatch(String destination);
+        void dispatch(String destination, String credential);
     }
 
     public enum Outcome {
@@ -104,6 +104,7 @@ public final class BridgeRequestHandler {
         }
 
         if (!isAuthorizedBearer(authHeader)) return Outcome.UNAUTHORIZED;
+        String credential = authHeader.substring(7).trim();
 
         String payload = queryPayload;
         if (payload == null && isPost && bodyLength > 0) {
@@ -118,7 +119,7 @@ public final class BridgeRequestHandler {
                 payload = body;
             }
         }
-        return accept(payload);
+        return accept(payload, credential);
     }
 
     /** Handles one complete BLE characteristic value (single or reassembled long write). */
@@ -135,10 +136,10 @@ public final class BridgeRequestHandler {
         if (secondBreak < 0) return Outcome.MALFORMED;
         String credential = stripCr(text.substring(firstBreak + 1, secondBreak));
         if (!authorization.verifyCredential(credential)) return Outcome.UNAUTHORIZED;
-        return accept(text.substring(secondBreak + 1));
+        return accept(text.substring(secondBreak + 1), credential);
     }
 
-    private Outcome accept(String rawPayload) {
+    private Outcome accept(String rawPayload, String credential) {
         if (rawPayload == null) return Outcome.MALFORMED;
         String payload = rawPayload.trim();
         if (payload.isEmpty()) return Outcome.MALFORMED;
@@ -148,7 +149,7 @@ public final class BridgeRequestHandler {
         for (int i = 0; i < payload.length(); i++) {
             if (Character.isISOControl(payload.charAt(i))) return Outcome.MALFORMED;
         }
-        dispatcher.dispatch(payload);
+        dispatcher.dispatch(payload, credential);
         return Outcome.ACCEPTED;
     }
 
