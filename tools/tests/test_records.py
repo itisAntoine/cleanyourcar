@@ -44,6 +44,99 @@ class RecordsTest(NoProcessTestCase):
         return self.root / ".originals" / ("%s-user-%d.json" %
                                            (self.plan.target.binding_hash, self.plan.android_user))
 
+    def test_reanchored_snapshot_requires_all_typed_action_originals(self):
+        from car_support.operations import content_hash
+        package = "com.example.newapp"
+        actions = {
+            "install_absent": {"type": "INSTALL_APK", "package": package, "version_code": 1,
+                              "min_sdk": 23, "sha256": "a" * 64, "path": "new.apk"},
+            "install_present": {"type": "INSTALL_APK", "package": self.candidates[0],
+                               "version_code": 2, "min_sdk": 23,
+                               "sha256": "a" * 64, "path": "existing.apk"},
+            "package_state": self.plan.actions[0],
+            "setting": {"type": "SET_SETTING", "namespace": "system",
+                        "name": "screen_brightness", "value": "120"},
+        }
+        with mock.patch("car_support.operations.SUPPORTED_SETTINGS",
+                        frozenset({("system", "screen_brightness")})):
+            for case, action in actions.items():
+                plan = replace(self.plan, operation_id="omitted-" + case, actions=(action,))
+                state = {"report": self.report, "settings": {"system/screen_brightness": None}}
+                record = self.store.save_original(plan, state)
+                path = self.root / plan.operation_id / "snapshot.json"
+                original = path.read_bytes()
+                original_anchor = path.with_suffix(".integrity.json").read_bytes()
+                fields = (["original_settings"] if case == "setting" else
+                          ["installed_package_identities"] if case == "install_absent" else
+                          ["installed_package_identities", "original_package_flags"])
+                for field in fields:
+                    with self.subTest(case=case, field=field):
+                        data = json.loads(original)
+                        data[field] = {}
+                        path.write_text(json.dumps(data))
+                        path.with_suffix(".integrity.json").write_text(json.dumps(
+                            {"schema_version": 1, "sha256": content_hash(data)}))
+                        try:
+                            with self.assertRaises(RecordError):
+                                self.store.load(plan.operation_id)
+                            with self.assertRaises(RecordError):
+                                self.store.save_original(plan, state)
+                        finally:
+                            path.write_bytes(original)
+                            path.with_suffix(".integrity.json").write_bytes(original_anchor)
+                loaded = self.store.load(plan.operation_id)
+                self.assertEqual(loaded.to_dict(), record.to_dict())
+                if case == "install_absent":
+                    self.assertIn(package, loaded.installed_package_identities)
+                    self.assertIsNone(loaded.installed_package_identities[package])
+                    self.assertNotIn(package, loaded.original_package_flags)
+                if case == "setting":
+                    self.assertIsNone(loaded.original_settings["system/screen_brightness"])
+
+    def test_anchor_post_replace_sync_failure_requires_explicit_durable_revalidation(self):
+        import car_support.records as records
+        snapshot_directory = self.root / self.plan.operation_id
+        anchor = snapshot_directory / "snapshot.integrity.json"
+        original_sync = records._sync_directory
+
+        def fail_after_anchor_replace(path):
+            if path == snapshot_directory and anchor.exists():
+                raise OSError(errno.ENOSPC, "directory sync after anchor replace failed")
+            return original_sync(path)
+
+        with mock.patch("car_support.records._sync_directory", side_effect=fail_after_anchor_replace):
+            with self.assertRaises(RecordError):
+                self.save()
+            self.assertTrue(anchor.exists())
+            # Matching visible files alone cannot prove that the final rename is durable.
+            with self.assertRaises(RecordError):
+                RecordStore(self.root).load(self.plan.operation_id)
+        expected = [snapshot_directory / "snapshot.json", anchor,
+                    self.aggregate_path(), self.aggregate_path().with_suffix(".integrity.json")]
+        synced_files = set()
+        synced_dirs = set()
+        original_fsync = records.os.fsync
+
+        def track_fsync(fd):
+            info = os.fstat(fd)
+            for path in expected:
+                if info.st_ino == path.stat().st_ino and info.st_dev == path.stat().st_dev:
+                    synced_files.add(path)
+            return original_fsync(fd)
+
+        def track_directory(path):
+            synced_dirs.add(path)
+            return original_sync(path)
+
+        with mock.patch("car_support.records.os.fsync", side_effect=track_fsync), \
+                mock.patch("car_support.records._sync_directory", side_effect=track_directory):
+            loaded = RecordStore(self.root).load(self.plan.operation_id)
+        self.assertEqual(synced_files, set(expected))
+        self.assertTrue({snapshot_directory, self.aggregate_path().parent} <= synced_dirs)
+        self.assertEqual(loaded.original_package_flags,
+                         {self.candidates[0]: self.report.package_flags[self.candidates[0]]})
+        self.assertEqual(self.fake.mutating_calls, [])
+
     def test_snapshot_original_edit_refused_before_confirmation(self):
         self.report.package_flags[self.candidates[0]] = 0
         first = self.save()

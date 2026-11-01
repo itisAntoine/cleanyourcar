@@ -84,6 +84,14 @@ after a validated extension that preserves every previously saved original.
 
 Every loaded snapshot must also agree with its anchored target/user aggregate
 on HOME and its individual package flags, settings and installed identities.
+The complete required key sets are derived from the typed plan actions, not from
+whatever entries remain in the snapshot. Each package action requires its
+original installation identity; each package-state action requires its exact
+original flag; an APK action also requires a flag when originally installed.
+Known original absence requires an explicit identity entry with `null` and no
+invented flag. Every settings action requires its individual original key, even
+when the original is explicitly `null`. Omitting required entries refuses even
+if the snapshot alone is reanchored while the independent aggregate is unchanged.
 Before saving an extension, existing snapshots are checked as independent
 original truth. Editing an aggregate and its sidecar cannot silently change
 originals already held in a separately anchored snapshot. Deleting the aggregate
@@ -100,6 +108,15 @@ content remain available for explicit manual investigation; there is no silent
 repair, success inference, or write authorization. An interruption before
 replacing existing data leaves its previously valid pair usable. Keep the whole
 private record tree together when backing it up.
+
+If final directory `fsync` fails **after** anchor replacement, the visible pair
+may nevertheless match. Matching digests are not a durability receipt. Every
+anchored read explicitly `fsync`s both saved data and anchor files and their
+containing directory before returning trusted data. Loading a record revalidates
+both its snapshot pair and aggregate pair. Any failed revalidation refuses;
+a later successful revalidation can establish durability for a complete matching
+pair without editing content or regenerating anchors. Missing or mismatched
+pairs remain unavailable and are never repaired by this check.
 
 These checks detect edits/corruption relative to retained independent anchors.
 They are **not tamper-proof authentication against the local owner**, who can

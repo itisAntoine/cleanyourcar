@@ -112,6 +112,18 @@ def _read_anchored(path):
             or type(anchor["schema_version"]) is not int or anchor["schema_version"] != 1
             or anchor["sha256"] != content_hash(data)):
         raise RecordError("saved content does not match its durable integrity anchor: %s" % path)
+    # A matching pair may be visible after its final directory fsync failed. Establish
+    # durability afresh on every read; never use matching hashes as a durability receipt.
+    try:
+        for saved_path in (path, path.with_suffix(".integrity.json")):
+            fd = _open_private(saved_path, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        _sync_directory(path.parent)
+    except OSError as error:
+        raise RecordError("anchored content durability revalidation failed: %s" % error) from error
     return data
 
 
@@ -363,6 +375,20 @@ class RecordStore:
             raise RecordError("snapshot and earliest-original aggregate targets differ")
         if snapshot["original_home"] != aggregate.get("home"):
             raise RecordError("snapshot and aggregate disagree on original HOME")
+        plan = OperationPlan.from_dict(snapshot["plan"])
+        expected = {"original_package_flags": set(), "original_settings": set(),
+                    "installed_package_identities": set()}
+        for action in plan.actions:
+            if action["type"] == "SET_SETTING":
+                expected["original_settings"].add(action["namespace"] + "/" + action["name"])
+            else:
+                package = action["package"]
+                expected["installed_package_identities"].add(package)
+                identities = aggregate.get("installed_packages")
+                if not isinstance(identities, dict) or package not in identities:
+                    raise RecordError("aggregate lacks required original installation identity: " + package)
+                if action["type"] == "SET_PACKAGE_ENABLED_STATE" or identities[package] is not None:
+                    expected["original_package_flags"].add(package)
         for snapshot_key, aggregate_key in (
                 ("original_package_flags", "package_flags"),
                 ("original_settings", "settings"),
@@ -370,7 +396,10 @@ class RecordStore:
             original = aggregate.get(aggregate_key)
             if not isinstance(original, dict):
                 raise RecordError("invalid earliest-original aggregate field: " + aggregate_key)
-            for key, value in snapshot[snapshot_key].items():
+            saved = snapshot.get(snapshot_key)
+            if not isinstance(saved, dict) or set(saved) != expected[snapshot_key]:
+                raise RecordError("snapshot lacks complete typed-action originals: " + snapshot_key)
+            for key, value in saved.items():
                 if key not in original or canonical(value) != canonical(original[key]):
                     raise RecordError("snapshot and aggregate disagree on original " + key)
 
