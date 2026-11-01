@@ -512,7 +512,9 @@ def _restore_accepted(action, command):
         4: "disabled-until-used",
     }[action["value"]]
     return (command.returncode == 0 and not command.stderr.strip()
-            and command.stdout.strip() == "%s new state: %s" % (action["package"], expected))
+            and re.fullmatch(r"(?:Package )?" + re.escape(action["package"])
+                             + r" new state: " + re.escape(expected),
+                             command.stdout.strip()) is not None)
 
 
 def _source_prefix_matches(source, plan):

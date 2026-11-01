@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -40,6 +41,8 @@ class RestoringAdb(ExecutingAdb):
 
     def __init__(self, responses):
         super().__init__(responses)
+        self.restore_output_prefix = ""
+        self.restore_output_state = None
         self.responses["pm"]["stdout"] += (
             "  enable [--user USER_ID] PACKAGE_OR_COMPONENT\n"
             "  disable [--user USER_ID] PACKAGE_OR_COMPONENT\n"
@@ -88,7 +91,9 @@ class RestoringAdb(ExecutingAdb):
                     "disable-user": "disabled-user",
                     "disable-until-used": "disabled-until-used",
                 }[command]
-                output = "%s new state: %s\n" % (package, state)
+                state = self.restore_output_state or state
+                output = "%s%s new state: %s\n" % (
+                    self.restore_output_prefix, package, state)
                 return CommandResult(0, output, "")
         return super().__call__(argv, timeout)
 
@@ -279,6 +284,58 @@ class RecoveryTest(NoProcessTestCase):
                     operations.plan_debloat(
                         unsupported, self.profile, self.policy, self.candidates)
         self.assertEqual(self.fake.mutating_calls, [])
+
+    def test_initial_mutation_refuses_when_help_lacks_per_user_inverse(self):
+        cases = {
+            0: ("default-state", "default_state"),
+            1: ("enable", "enable"),
+            2: ("disable", "disable"),
+            3: ("disable-user", "disable_user"),
+            4: ("disable-until-used", "disable_until_used"),
+        }
+        original_help = self.fake.responses["pm"]["stdout"]
+        for flag, (command, capability) in cases.items():
+            with self.subTest(flag=flag, command=command):
+                self.fake.responses["pm"]["stdout"] = original_help
+                lines = []
+                found = False
+                for line in original_help.splitlines():
+                    if re.match(r"^\s*" + re.escape(command) + r"(?=\s|$)", line):
+                        line = line.replace("[--user USER_ID] ", "")
+                        found = True
+                    lines.append(line)
+                self.assertTrue(found, command)
+                self.fake.responses["pm"]["stdout"] = "\n".join(lines) + "\n"
+                self._set_flag(self.candidates[0], flag)
+                report = discover(self.client)
+                self.assertFalse(report.command_capabilities[capability])
+                with self.assertRaisesRegex(
+                        operations.PlanError, "no probed restore command"):
+                    operations.plan_debloat(
+                        report, self.profile, self.policy, self.candidates)
+        self.assertEqual(self.fake.mutating_calls, [])
+
+    def test_restore_accepts_prefixed_state_output_but_rejects_mismatch(self):
+        source = self._confirmed_source(original_flag=0)
+        plan, token = self._restore(source)
+        self.fake.restore_output_prefix = "Package "
+        result = operations.apply(plan, self.client, self.store, token)
+        self.assertEqual(result.status, "COMPLETED", result.error)
+
+        source = self._confirmed_source(original_flag=0)
+        plan, token = self._restore(source)
+        self.fake.restore_output_state = "enabled"
+        mismatch = operations.apply(plan, self.client, self.store, token)
+        self.assertEqual(mismatch.status, "FAILED")
+        self.assertEqual(discover(self.client).package_flags[self.candidates[0]], 0)
+
+    def test_restore_rejects_expected_output_without_exact_state_readback(self):
+        source = self._confirmed_source(original_flag=0)
+        plan, token = self._restore(source)
+        self.fake.outcome = "no-change"
+        result = operations.apply(plan, self.client, self.store, token)
+        self.assertEqual(result.status, "FAILED")
+        self.assertEqual(discover(self.client).package_flags[self.candidates[0]], 3)
 
     def test_crash_after_write_before_result_uses_fresh_readback(self):
         record = self.store.save_original(self.source_plan, self.report)

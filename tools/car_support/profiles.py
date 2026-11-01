@@ -116,6 +116,26 @@ def _user_exists(client):
         return False
     return client.android_user in {int(m) for m in _USER_INFO.findall(result.stdout)}
 
+def _per_user_command_supported(help_text, command):
+    command_line = re.compile(
+        r"^(?P<indent>[ \t]*)(?:pm[ \t]+)?" + re.escape(command)
+        + r"(?=[ \t]|$)(?P<arguments>.*)$")
+    user_option = re.compile(r"(?:^|[\s\[])--user(?:[\s=\]])")
+    lines = help_text.splitlines()
+    for index, line in enumerate(lines):
+        match = command_line.match(line)
+        if not match:
+            continue
+        if user_option.search(match.group("arguments")):
+            return True
+        if index + 1 < len(lines):
+            continuation = lines[index + 1]
+            indent = len(continuation) - len(continuation.lstrip(" \t"))
+            if (indent > len(match.group("indent"))
+                    and re.match(r"^\s*\[?--user(?:\s|=|\])", continuation)):
+                return True
+    return False
+
 
 def _probe_capabilities(client, unresolved):
     listing = client.read(["cmd", "-l"])
@@ -133,11 +153,9 @@ def _probe_capabilities(client, unresolved):
     }
     return {
         "cmd_package": listing.returncode == 0 and "package" in services,
-        **{key: bool(re.search(r"(?m)^\s*(?:pm\s+)?" + re.escape(command)
-                               + r"(?:\s|\[)", text))
+        **{key: _per_user_command_supported(text, command)
            for key, command in commands.items()},
-        "uninstall_user": bool(re.search(
-            r"(?m)^\s*(?:pm\s+)?uninstall\b[^\n]*--user\b", text)),
+        "uninstall_user": _per_user_command_supported(text, "uninstall"),
         "list_packages_user": "list packages" in text and "--user" in text,
     }
 

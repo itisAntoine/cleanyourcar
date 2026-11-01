@@ -152,7 +152,11 @@ durable intent/readback history are inverted. Exact per-user flags are preserved
 `0` uses the probed `default-state`, `1` `enable`, `2` `disable`, `3`
 `disable-user`, and `4` `disable-until-used`. A first mutation is refused unless
 the selected firmware's read-only `pm` help probe advertises the exact inverse
-command. No state is forced enabled merely because a package appears on a list.
+command with `--user` in that command's own usage line (or an immediately
+indented `--user` continuation). A global or unrelated help mention is not
+evidence that the inverse is available for the selected user. Command output
+must identify the package and exact requested state, and fresh readback must
+match it. No state is forced enabled merely because a package appears on a list.
 
 A pending source intent may be reconciled only when a fresh target-bound read
 matches either the original state or the requested state. The fresh observation

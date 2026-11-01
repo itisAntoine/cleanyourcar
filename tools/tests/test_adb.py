@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -189,6 +190,46 @@ class DiscoveryTest(NoRealAdbTestCase):
                 self.assertIn("home.candidates", report.unresolved_facts)
                 self.assertNotIn("home.default", report.unresolved_facts)
                 self.assertEqual(fake.unscripted, [])
+
+    def test_restore_command_capabilities_require_per_user_syntax(self):
+        commands = {
+            "enable": "enable",
+            "disable": "disable",
+            "disable_user": "disable-user",
+            "disable_until_used": "disable-until-used",
+            "default_state": "default-state",
+        }
+        source = api30()
+        source["pm"]["stdout"] += (
+            "  disable [--user USER_ID] PACKAGE_OR_COMPONENT\n"
+            "  disable-until-used [--user USER_ID] PACKAGE_OR_COMPONENT\n")
+        for capability, command in commands.items():
+            lines = source["pm"]["stdout"].splitlines()
+            without_user = []
+            found = False
+            for line in lines:
+                if re.match(r"^\s*" + re.escape(command) + r"(?=\s|$)", line):
+                    line = line.replace("[--user USER_ID] ", "")
+                    found = True
+                without_user.append(line)
+            self.assertTrue(found, command)
+            responses = copy.deepcopy(source)
+            responses["pm"]["stdout"] = "\n".join(without_user) + "\n"
+            report = discover(AdbClient("fake-adb", NET, 0,
+                                        runner=FakeAdb(responses)))
+            with self.subTest(command=command):
+                self.assertFalse(report.command_capabilities[capability])
+
+    def test_restore_command_capability_accepts_immediate_indented_user_continuation(self):
+        source = api30()
+        source["pm"]["stdout"] = (
+            source["pm"]["stdout"].replace(
+                "  enable [--user USER_ID] PACKAGE_OR_COMPONENT\n",
+                "  enable PACKAGE_OR_COMPONENT\n"
+                "    [--user USER_ID]\n"))
+        report = discover(AdbClient("fake-adb", NET, 0,
+                                    runner=FakeAdb(source)))
+        self.assertTrue(report.command_capabilities["enable"])
 
     def test_modern_cmd_package_reads_home_and_packages(self):
         fake = FakeAdb(api30())
