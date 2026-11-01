@@ -27,7 +27,7 @@ Other directories:
 
 - `profiles/`: device profile schema, bundled profiles and test fixtures.
 - `examples/`: reported device notes and debloat lists.
-- `tools/`: legacy shell helpers.
+- `tools/`: Python ADB tooling (`car.py`) and plan-only shell wrappers; see the ADB workflow.
 - `docs/`: documentation.
 
 ## Building
@@ -68,6 +68,10 @@ release requires your own signing configuration, kept outside the repository.
   - privacy review;
   - upgrade changes;
   - open qualification gaps.
+- [ADB workflow](docs/adb-workflow.md) and [private records](docs/adb-records.md): explicit
+  device selection, plan-first writes, restore limits. Physical qualification is pending, so
+  no firmware is write-supported.
+- [Assistant prompt](PROMPT.md): ask before every device operation.
 - [Contributing a device profile](docs/contributing-device-profile.md).
 - [XYAuto YT3518C notes](docs/devices/yt3518c-mt3561s.md).
 - [iOS Shortcut setup for the navigation bridge](docs/ios-shortcut-setup.md) (in Vietnamese).
@@ -78,6 +82,8 @@ release requires your own signing configuration, kept outside the repository.
 - **Instrumentation tests:** they compile in the build, but have **not yet been run** on any
   emulator or device.
 - **XYAuto vendor features:** require physical validation.
+- **ADB writes:** host-side tooling is tested offline with fake devices only; physical
+  reference-hardware qualification is a pending release gate.
 - **AAOS and other aftermarket firmware:** no claim is made yet.
 
 See [docs/compatibility.md](docs/compatibility.md#qualification-gaps).

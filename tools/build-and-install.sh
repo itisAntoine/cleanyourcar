@@ -1,16 +1,71 @@
 #!/usr/bin/env bash
-# Builds CleanYourCar (:app) and Navigation Bridge (:navbridge), checks the <512 KB APK size gate,
-# installs them onto the head unit over ADB, grants overlay/settings permissions, and verifies Home launch.
+# Builds CleanYourCar (:app), enforces the APK size gate, and (unless BUILD_ONLY=1) creates an
+# explicit, target-bound install PLAN. It never installs, grants permissions, changes settings,
+# starts services, or touches the launcher; applying is a separate step (tools/car.py apply).
+#   BUILD_ONLY=1 tools/build-and-install.sh                 # build + size gate only; no ADB, no plan
+#   tools/build-and-install.sh --serial <transport> --user <id> --profile <profile.json> \
+#       --output <private-dir/plan.json> [--with-bridge] [--records <dir>] [--adb <path>]
+# The optional Navigation Bridge is built and planned only with --with-bridge.
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+TOOLS_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$TOOLS_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
-echo "Building Release APKs (:app and :navbridge)..."
-./gradlew :app:assembleRelease :navbridge:assembleRelease
+if [ -n "${CAR_HOST:-}" ]; then
+    echo "Error: CAR_HOST is no longer supported. Select one device with --serial <transport>." >&2
+    exit 2
+fi
+
+SERIAL=""
+USER_ID=""
+PROFILE=""
+OUTPUT=""
+WITH_BRIDGE=0
+PASSTHROUGH=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --confirm|--confirm=*|--yes|-y|--apply|--force|--auto-confirm)
+            echo "Error: this wrapper never confirms or applies; review the plan, then run car.py apply yourself ($1 refused)." >&2
+            exit 2 ;;
+        --with-bridge) WITH_BRIDGE=1; shift ;;
+        --serial|--user|--profile|--output|--records|--adb|--app-version-code)
+            if [ $# -lt 2 ]; then
+                echo "Error: $1 needs a value." >&2
+                exit 2
+            fi
+            case "$1" in
+                --serial) SERIAL="$2" ;;
+                --user) USER_ID="$2" ;;
+                --profile) PROFILE="$2" ;;
+                --output) OUTPUT="$2" ;;
+                *) PASSTHROUGH+=("$1" "$2") ;;
+            esac
+            shift 2 ;;
+        *)
+            echo "Error: unknown argument '$1'." >&2
+            exit 2 ;;
+    esac
+done
+
+if [ "${BUILD_ONLY:-0}" != "1" ]; then
+    if [ -z "$SERIAL" ] || ! [[ "$USER_ID" =~ ^[0-9]+$ ]] || [ -z "$PROFILE" ] || [ -z "$OUTPUT" ]; then
+        echo "Usage: $0 --serial <transport> --user <id> --profile <profile.json> --output <plan.json> [--with-bridge]" >&2
+        echo "       BUILD_ONLY=1 $0   (build and size gate only)" >&2
+        exit 2
+    fi
+fi
 
 APP_APK="app/build/outputs/apk/release/app-release.apk"
 BRIDGE_APK="addons/nav-bridge/build/outputs/apk/release/navbridge-release.apk"
+rm -f "$APP_APK" "$BRIDGE_APK"
+
+TASKS=(":app:assembleRelease")
+if [ "$WITH_BRIDGE" = "1" ]; then
+    TASKS+=(":navbridge:assembleRelease")
+fi
+echo "Building Release APK(s): ${TASKS[*]}"
+./gradlew "${TASKS[@]}"
 
 if [ ! -f "$APP_APK" ]; then
     echo "Error: Release APK not found at $APP_APK" >&2
@@ -31,68 +86,26 @@ if [ "$APK_BYTES" -ge "$MAX_BYTES" ]; then
 fi
 
 if [ "${BUILD_ONLY:-0}" = "1" ]; then
-    echo "BUILD_ONLY=1 set; skipping ADB installation."
+    echo "BUILD_ONLY=1 set; build and size gate passed. No ADB was used."
     exit 0
 fi
 
-ADB_BIN="${ADB:-}"
-if [ -z "$ADB_BIN" ]; then
-    if command -v adb >/dev/null 2>&1; then
-        ADB_BIN="adb"
-    elif [ -x "$HOME/Downloads/platform-tools/adb" ]; then
-        ADB_BIN="$HOME/Downloads/platform-tools/adb"
-    elif [ -x "$HOME/Library/Android/sdk/platform-tools/adb" ]; then
-        ADB_BIN="$HOME/Library/Android/sdk/platform-tools/adb"
-    else
-        echo "Error: adb not found. Set ADB=/path/to/adb." >&2
+plan_install() {
+    local apk="$1" plan="$2" metadata="${2%.json}-apk-metadata.json"
+    python3 "$TOOLS_DIR/car.py" apk-metadata --apk "$apk" --output "$metadata"
+    python3 "$TOOLS_DIR/car.py" plan-install --serial "$SERIAL" --user "$USER_ID" \
+        --profile "$PROFILE" --apk-metadata "$metadata" --output "$plan" \
+        ${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}
+}
+
+plan_install "$APP_APK" "$OUTPUT"
+if [ "$WITH_BRIDGE" = "1" ]; then
+    if [ ! -f "$BRIDGE_APK" ]; then
+        echo "Error: Navigation Bridge APK not found at $BRIDGE_APK" >&2
         exit 1
     fi
+    plan_install "$BRIDGE_APK" "${OUTPUT%.json}-bridge.json"
 fi
 
-ADB_ARGS=()
-if [ -n "${CAR_HOST:-}" ]; then
-    "$ADB_BIN" connect "${CAR_HOST}:5555"
-    ADB_ARGS=("-s" "${CAR_HOST}:5555")
-fi
-
-echo "Installing CleanYourCar ($APP_APK)..."
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} install -r "$APP_APK"
-
-if [ -f "$BRIDGE_APK" ]; then
-    echo "Installing Navigation Bridge Add-on ($BRIDGE_APK)..."
-    "$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} install -r "$BRIDGE_APK"
-fi
-
-echo "Granting overlay & runtime permissions (Android 6.0 / API 23 compatible)..."
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "appops set com.cleanyourcar.launcher SYSTEM_ALERT_WINDOW allow" || true
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "appops set com.cleanyourcar.launcher WRITE_SETTINGS allow" || true
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "pm grant com.cleanyourcar.launcher android.permission.ACCESS_FINE_LOCATION" || true
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "pm grant com.cleanyourcar.launcher android.permission.ACCESS_COARSE_LOCATION" || true
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "pm grant com.cleanyourcar.launcher android.permission.READ_EXTERNAL_STORAGE" || true
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "pm grant com.cleanyourcar.navbridge android.permission.ACCESS_FINE_LOCATION" || true
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "pm grant com.cleanyourcar.navbridge android.permission.ACCESS_COARSE_LOCATION" || true
-
-# Enable BackActionService so the [↩ Back] button in Live Google Maps Mode dispatches system Back
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "settings put secure enabled_accessibility_services com.cleanyourcar.launcher/com.cleanyourcar.launcher.BackActionService" || true
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "settings put secure accessibility_enabled 1" || true
-
-echo "Starting NavBridgeService and CleanYourCar MainActivity..."
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "am startservice -n com.cleanyourcar.navbridge/.NavBridgeService" || true
-"$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "am start -n com.cleanyourcar.launcher/.MainActivity"
-sleep 2
-
-FOCUSED=$("$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "dumpsys activity activities | grep -E 'mResumedActivity|mFocusedApp|topResumedActivity'" || true)
-echo "Focused activity: $FOCUSED"
-
-if [[ "$FOCUSED" == *"com.cleanyourcar.launcher"* ]]; then
-    echo "Verified CleanYourCar is running in foreground."
-    if [ "${DISABLE_STOCK_LAUNCHER:-0}" = "1" ]; then
-        echo "DISABLE_STOCK_LAUNCHER=1: Disabling stock com.android.launcher3..."
-        "$ADB_BIN" ${ADB_ARGS[@]+"${ADB_ARGS[@]}"} shell "pm disable-user com.android.launcher3"
-    else
-        echo "Tip: Press Home button on head unit and choose CleanYourCar -> Always (or re-run with DISABLE_STOCK_LAUNCHER=1)."
-    fi
-else
-    echo "Warning: CleanYourCar was not detected in foreground; leaving stock launcher untouched." >&2
-    exit 1
-fi
+echo "Install plan(s) created. Nothing was installed. Review each preview, then apply separately with:"
+echo "  python3 tools/car.py apply --serial <transport> --user <id> --plan <plan.json> --confirm <hash>"

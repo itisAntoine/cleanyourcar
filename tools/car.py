@@ -12,10 +12,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from car_support.adb import AdbClient, AdbError  # noqa: E402
 from car_support.profiles import DiscoveryError, discover  # noqa: E402
-from car_support.profiles import load_policy, load_profile, PolicyError  # noqa: E402
-from car_support.operations import (apply, ApplyResult, plan_debloat, plan_install,  # noqa: E402
-                                    plan_restore, plan_remove_apk, PlanError)
+from car_support.profiles import (export_candidate, load_policy, load_profile,  # noqa: E402
+                                  PolicyError, validate_candidates)
+from car_support.operations import (apply, ApplyResult, describe_apk, plan_debloat,  # noqa: E402
+                                    plan_install, plan_restore, plan_remove_apk, PlanError)
 from car_support.records import RecordStore, RecordError, write_private_json  # noqa: E402
+
+
+_MAX_REPORT_BYTES = 8 * 1024 * 1024
 
 
 def _parser():
@@ -50,6 +54,17 @@ def _parser():
                 preview.add_argument("--apk-metadata", required=True, type=Path,
                                      help="local JSON package/version_code/min_sdk/sha256/path; "
                                           "verified against actual APK bytes with existing SDK aapt2")
+    static = commands.add_parser("validate-list", help="static candidate-list syntax check only; "
+                                 "not a device safety or qualification result")
+    static.add_argument("candidates", type=Path)
+    export = commands.add_parser("export-profile", help="sanitized `reported` candidate profile "
+                                 "from a private report; review before sharing")
+    export.add_argument("--report", required=True, type=Path, help="private discovery report")
+    export.add_argument("--output", required=True, type=Path, help="candidate profile path")
+    meta = commands.add_parser("apk-metadata", help="describe a local APK for plan-install "
+                               "using the existing SDK aapt2 (no device contact)")
+    meta.add_argument("--apk", required=True, type=Path)
+    meta.add_argument("--output", required=True, type=Path)
     execution = commands.add_parser("apply", help="apply one explicitly confirmed saved private plan")
     execution.add_argument("--serial", required=True)
     execution.add_argument("--user", required=True, type=int)
@@ -118,12 +133,40 @@ def main(argv=None, runner=None):
     args = parser.parse_args(argv)
     if args.command == "discover":
         return _discover(args, parser, runner)
+    if args.command in {"validate-list", "export-profile", "apk-metadata"}:
+        return _local(args)
     if args.command.startswith("plan-"):
         return _preview(args, parser, runner)
     if args.command == "apply":
         return _apply(args, parser, runner)
     parser.error("unknown command")
     return 2
+
+
+def _local(args):
+    """Host-only commands: no ADB client is ever constructed here."""
+    try:
+        if args.command == "validate-list":
+            names = validate_candidates(args.candidates.read_text(encoding="utf-8-sig")
+                                        .splitlines())
+            print("Static syntax/protection check only: %d candidates. This is NOT a device "
+                  "safety or qualification result." % len(names))
+        elif args.command == "export-profile":
+            with args.report.open("rb") as handle:
+                data = handle.read(_MAX_REPORT_BYTES + 1)
+            if len(data) > _MAX_REPORT_BYTES:
+                raise PolicyError("report is too large")
+            candidate = export_candidate(json.loads(data.decode("utf-8")))
+            _write_private(args.output, candidate)
+            print("Candidate (classification: reported) written to %s. Review every field "
+                  "before sharing; it is not verified." % args.output)
+        else:
+            _write_private(args.output, describe_apk(args.apk))
+            print("APK metadata written to %s" % args.output)
+    except (PolicyError, PlanError, OSError, ValueError) as error:
+        print("error: %s refused: %s" % (args.command, error), file=sys.stderr)
+        return 1
+    return 0
 
 
 def _preview(args, parser, runner):

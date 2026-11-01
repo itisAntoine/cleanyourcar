@@ -111,9 +111,11 @@ Collect these facts:
 
 Copy only the specific values listed above.
 
-Read-only ADB discovery and sanitization tooling is planned but is not part of this
-repository yet. Until it lands, collect the facts by hand from the unit's settings screens
-or with standard read-only `adb shell getprop` queries, and copy only the needed values.
+With your explicit approval of each command, `python3 tools/car.py discover` makes a
+private read-only report and `python3 tools/car.py export-profile --report <report> --output
+<candidate.json>` turns it into a sanitized candidate classified `reported`. It copies only
+public build properties and SDK, is never verified, and still needs your manual review
+before you share it. See [adb-workflow.md](adb-workflow.md).
 
 ## Submitting
 

@@ -312,18 +312,12 @@ class CandidateListTest(NoProcessTestCase):
                 with self.assertRaises(PolicyError):
                     validate_candidates(["com.example.fakebloat", package])
 
-        # Every protection in the existing Java safety test, shell guard, and the shipped
-        # XYAuto profile stays protected here: one set is never weaker than another.
-        java = JAVA_SAFETY_TEST.read_text(encoding="utf-8")
-        java_block = re.search(r"PROTECTED_PACKAGES = new HashSet<>\(Arrays\.asList\((.*?)\)\)",
-                               java, re.S).group(1)
-        shell = DISABLE_SCRIPT.read_text(encoding="utf-8")
-        shell_block = re.search(r"PROTECTED_PACKAGES=\((.*?)\n\)", shell, re.S).group(1)
-        for source, block in (("DebloatSafetyTest", java_block), ("disable.sh", shell_block)):
-            names = re.findall(r'"([^"]+)"', block)
-            self.assertGreater(len(names), 20, source)
-            with self.subTest(source=source):
-                self.assertEqual(sorted(set(names) - PROTECTED_PACKAGES), [])
+        # The wrappers and the Java safety test hold no second protected-package truth.
+        for source in (DISABLE_SCRIPT, JAVA_SAFETY_TEST):
+            with self.subTest(source=source.name):
+                text = source.read_text(encoding="utf-8")
+                self.assertNotIn("com.autochips.android.backcar", text)
+                self.assertNotIn("PROTECTED_PACKAGES", text)
         profile = load_profile(XYAUTO_PROFILE, 1)
         self.assertEqual(sorted(set(profile["protectedPackages"]) - PROTECTED_PACKAGES), [])
         roles = {r["packageName"] for r in profile["roleDefaults"].values()}

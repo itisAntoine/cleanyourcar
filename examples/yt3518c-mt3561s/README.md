@@ -11,7 +11,7 @@
 `debloat.txt` is a historical reference, not authorization for the multi-device tooling.
 The bundled `debloat-policy.json` remains **unqualified**. Its calendar-provider and Play
 Store dependency questions are unresolved; no device qualification is claimed here.
-The legacy commands below do not establish qualification.
+The commands below only create previews and do not establish qualification.
 
 `load_policy()` validates structure only. `validate_debloat_policy()` requires a qualified
 policy whose **complete content** is pinned in the repository-shipped
@@ -36,15 +36,30 @@ debloat even with a known preferred default. Current API 23 discovery does not e
 all usable HOME handlers and therefore cannot authorize debloat. Switching HOME remains
 outside debloat.
 
-## Quick Start Over Wi-Fi ADB
+## Workflow (plan only)
+
+The wrappers never apply anything. Pick the device with `--serial` (a transport serial,
+never an IP guess) and the Android user with `--user`; keep outputs in a private
+directory (mode `0700`). Physical qualification is **pending**, so the production
+registries are empty and these previews currently refuse this firmware.
 
 ```bash
-# 1. Disable bloatware (frees ~550 MB RAM while keeping Reverse Camera, Bluetooth, USB Music, Dashcam, Equalizer, and Google Maps)
-CAR_HOST=192.168.100.234 ./tools/disable.sh examples/yt3518c-mt3561s/debloat.txt
+# 1. Static list check only (no device contact; not a safety or qualification result)
+./tools/disable.sh examples/yt3518c-mt3561s/debloat.txt --dry-run
 
-# 2. Build and install CleanYourCar (:app) + Navigation Bridge (:navbridge)
-CAR_HOST=192.168.100.234 ./tools/build-and-install.sh
+# 2. Debloat preview (read-only discovery of the selected device)
+./tools/disable.sh examples/yt3518c-mt3561s/debloat.txt --serial <transport> --user 0 \
+  --profile profiles/devices/xyauto-yt3518c/profile.json \
+  --policy examples/yt3518c-mt3561s/debloat-policy.json --output .cleanyourcar/plan.json
 
-# 3. Restore everything if ever needed
-CAR_HOST=192.168.100.234 ./tools/restore.sh examples/yt3518c-mt3561s/debloat.txt
+# 3. Build and size gate (no ADB); then an install preview. Bridge only with --with-bridge
+BUILD_ONLY=1 ./tools/build-and-install.sh
+./tools/build-and-install.sh --serial <transport> --user 0 \
+  --profile profiles/devices/xyauto-yt3518c/profile.json --output .cleanyourcar/install.json
+
+# 4. Restore preview from a recorded operation ID (never from a list)
+./tools/restore.sh <operation-id> --serial <transport> --user 0 --output .cleanyourcar/restore.json
 ```
+
+Applying is a separate `python3 tools/car.py apply ... --confirm <hash>` step you run
+yourself after reviewing the preview. See [docs/adb-workflow.md](../../docs/adb-workflow.md).

@@ -331,6 +331,33 @@ def inspect_apk(action):
         raise PlanError("local APK verification unavailable: %s" % type(error).__name__) from error
 
 
+def describe_apk(path):
+    """Read package/versionCode/minSdk/hash of a local APK with the existing SDK aapt2."""
+    try:
+        resolved = Path(path).expanduser().resolve(strict=True)
+        digest = _artifact_hash(resolved)
+        tool = find_aapt2()
+        if not tool:
+            raise PlanError("existing SDK aapt2 not found")
+        result = subprocess.run([tool, "dump", "badging", str(resolved)],
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, timeout=30, check=False, shell=False,
+                                universal_newlines=True, encoding="utf-8", errors="strict")
+        lines = result.stdout.splitlines()
+        package_lines = [line for line in lines if line.startswith("package:")]
+        sdk_lines = [line for line in lines if line.startswith("sdkVersion:")]
+        package = (re.fullmatch(r"package: name='([^']+)' versionCode='([0-9]+)'(?: .*)?",
+                                package_lines[0]) if len(package_lines) == 1 else None)
+        sdk = (re.fullmatch(r"sdkVersion:'([0-9]+)'", sdk_lines[0])
+               if len(sdk_lines) == 1 else None)
+        if result.returncode != 0 or result.stderr.strip() or package is None or sdk is None:
+            raise PlanError("aapt2 could not read exact APK package/version/minSdk")
+        return {"package": package.group(1), "version_code": int(package.group(2)),
+                "min_sdk": int(sdk.group(1)), "sha256": digest, "path": str(resolved)}
+    except (OSError, subprocess.SubprocessError, UnicodeError) as error:
+        raise PlanError("local APK description unavailable: %s" % type(error).__name__) from error
+
+
 @dataclass(frozen=True)
 class ApplyResult:
     status: str

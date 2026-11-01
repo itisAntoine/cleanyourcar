@@ -982,3 +982,50 @@ def sanitize(report):
         "unresolved_facts": sorted(set(facts)),
         "review_required": True,
     }
+
+
+def export_candidate(report):
+    """Sanitized, unreviewed ``reported`` candidate profile from a private report dict.
+
+    Only allowlisted public build facts are used. Identity hashes, package inventories,
+    serials, addresses, and any role/claim/protection data are never copied, and the result
+    can never be classified above ``reported``.
+    """
+    if (not isinstance(report, dict) or report.get("reportVersion") != REPORT_VERSION
+            or not isinstance(report.get("environment"), dict)):
+        raise PolicyError("not a version-1 private discovery report")
+    source = report["environment"]
+    if not _is_int(source.get("sdk")) or source["sdk"] < 1:
+        raise PolicyError("report has no readable SDK level")
+    properties = {key: value for key, value in sorted(source.get("buildProperties", {}).items())
+                  if key in BUILD_PROPERTY_KEYS and isinstance(value, str) and value}
+    if not properties:
+        raise PolicyError("report has no exact build properties; a candidate would match "
+                          "every device of this SDK")
+    platform = source.get("platform") if source.get("platform") in PLATFORMS else "aftermarket"
+    digest = hashlib.sha256(json.dumps([source["sdk"], properties], sort_keys=True)
+                            .encode("utf-8")).hexdigest()[:12]
+    evidence = {"classification": "reported",
+                "notes": "Unreviewed candidate generated from one private discovery report. "
+                         "No device qualification, role defaults, feature claims, or "
+                         "protections are asserted; review before sharing."}
+    if isinstance(properties.get("display"), str):
+        evidence["firmware"] = properties["display"]
+    candidate = {
+        "schemaVersion": SCHEMA_VERSION,
+        "profileId": "reported-" + digest,
+        "revision": 1,
+        "minAppVersionCode": 1,
+        "platform": platform,
+        "adapterId": "generic",
+        "match": {"sdkMin": source["sdk"], "sdkMax": source["sdk"],
+                  "buildProperties": properties},
+        "roleDefaults": {},
+        "featureClaims": {},
+        "protectedPackages": [],
+        "evidence": evidence,
+    }
+    try:
+        return validate_profile_object(candidate, 1)
+    except ProfileFormatError as error:
+        raise PolicyError("candidate is not a valid profile: %s" % error) from error

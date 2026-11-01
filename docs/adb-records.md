@@ -3,8 +3,8 @@
 The tooling provides **read-only discovery, local previews, separately gated
 installation/debloat apply, and state-preserving restore/recovery**. Production
 write-qualification registries remain empty: no currently shipped firmware is
-authorized to write. Do not run the legacy install/disable/restore scripts as an alternative
-when a preview refuses an operation. Setup and review are parked-only activities.
+authorized to write. The `tools/*.sh` wrappers only create these previews; do not use any ad hoc
+command as an alternative when a preview refuses an operation. Setup and review are parked-only activities.
 
 ## Preview commands
 
