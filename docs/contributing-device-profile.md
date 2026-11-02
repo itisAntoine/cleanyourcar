@@ -1,5 +1,8 @@
 # Contributing a device profile
 
+New to the project? Read [what CleanYourCar does](../README.md) and
+[try the launcher](getting-started.md) before collecting a profile.
+
 Start with [AGENTS.md](../AGENTS.md) for job routing and contribution checks. Use
 [troubleshooting](TROUBLESHOOTING.md) for known failures and
 [SECURITY.md](../SECURITY.md) for private vulnerability reporting availability/setup.
